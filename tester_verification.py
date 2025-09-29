@@ -65,10 +65,10 @@ def calculate_ktcc_metrics():
     
     # 처리 시간 분석
     processing_times = [record.get('processing_time', 0) for record in performance_data if record.get('success', False)]
-    total_times = [record.get('total_time', 0) for record in performance_data if record.get('total_time', 0)]
+    first_response_times = [record.get('first_response_time', 0) for record in performance_data if record.get('first_response_time', 0)]
     
     avg_processing_time = sum(processing_times) / len(processing_times) if processing_times else 0
-    avg_total_time = sum(total_times) / len(total_times) if total_times else 0
+    avg_first_response_time = sum(first_response_times) / len(first_response_times) if first_response_times else 0
     max_processing_time = max(processing_times) if processing_times else 0
     min_processing_time = min(processing_times) if processing_times else 0
     
@@ -116,10 +116,10 @@ def calculate_ktcc_metrics():
     print(f"  → 최대: {max_processing_time:.2f}초")
     print(f"  → 최소: {min_processing_time:.2f}초")
     
-    # AI 모델 반응시간 (VModel 서버 처리 시간)
-    reaction_status = "✅ 통과" if avg_total_time <= 1 else "❌ 미달"
-    print(f"AI 모델 반응시간:   {avg_total_time:>6.2f}초  {reaction_status} (기준: 1초)")
-    print(f"  → VModel 서버 처리 시간")
+    # AI 모델 반응시간 (첫 응답 시간)
+    reaction_status = "✅ 통과" if avg_first_response_time <= 1 else "❌ 미달"
+    print(f"AI 모델 반응시간:   {avg_first_response_time:>6.2f}초  {reaction_status} (기준: 1초)")
+    print(f"  → Task 생성 API 첫 응답 시간")
     
     # 전체 기준 통과 여부
     all_passed = (
@@ -162,7 +162,7 @@ def calculate_ktcc_metrics():
         'recall': recall,
         'f1_score': f1_score,
         'avg_processing_time': avg_processing_time,
-        'avg_total_time': avg_total_time,
+        'avg_first_response_time': avg_first_response_time,
         'all_passed': all_passed
     }
 
@@ -315,7 +315,7 @@ def export_report():
         f.write("처리 시간\n")
         f.write("-"*70 + "\n")
         f.write(f"생성시간:   {metrics['avg_processing_time']:.2f}초  {'✅' if metrics['avg_processing_time'] <= 60 else '❌'} (기준: 60초)\n")
-        f.write(f"반응시간:   {metrics['avg_total_time']:.2f}초  {'✅' if metrics['avg_total_time'] <= 1 else '❌'} (기준: 1초)\n\n")
+        f.write(f"반응시간:   {metrics['avg_first_response_time']:.2f}초  {'✅' if metrics['avg_first_response_time'] <= 1 else '❌'} (기준: 1초)\n\n")
         
         f.write("="*70 + "\n")
         f.write("최종 결과\n")
