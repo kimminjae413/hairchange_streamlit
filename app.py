@@ -43,7 +43,7 @@ def log_vmodel_polling(request_id, task_id, status, attempt):
     log_entry = f"[{timestamp}] POLLING: {request_id} | Task: {task_id} | Status: {status} | Attempt: {attempt}"
     append_to_log("logs/vmodel_api_raw.log", log_entry)
 
-def log_vmodel_completion(request_id, task_id, success, result_url=None, error=None, processing_time=0, total_time=0):
+def log_vmodel_completion(request_id, task_id, success, result_url=None, error=None, processing_time=0, first_response_time=0):
     """변환 완료 로그 (성능 측정 포함) - 실제 완료시 1회만 호출"""
     timestamp = datetime.now().isoformat()
     
@@ -55,14 +55,14 @@ def log_vmodel_completion(request_id, task_id, success, result_url=None, error=N
         "result_url": result_url,
         "error": error,
         "processing_time": processing_time,
-        "total_time": total_time
+        "first_response_time": first_response_time
     }
     api_response_log = f"[{timestamp}] COMPLETION: {json.dumps(response_data, ensure_ascii=False)}"
     append_to_log("logs/vmodel_api_raw.log", api_response_log)
     
     # 성공/실패 로그
     if success:
-        success_log = f"[{timestamp}] SUCCESS - {request_id} completed in {processing_time:.1f}s"
+        success_log = f"[{timestamp}] SUCCESS - {request_id} completed in {processing_time:.1f}s (first response: {first_response_time:.3f}s)"
     else:
         success_log = f"[{timestamp}] FAILED - {request_id}: {error}"
     append_to_log("logs/success_failures.log", success_log)
@@ -78,8 +78,8 @@ def log_vmodel_completion(request_id, task_id, success, result_url=None, error=N
         "task_id": task_id,
         "success": success,  # API 호출 성공 여부
         "completed": completed,  # 실제 이미지 생성 완료 여부
-        "processing_time": processing_time,  # 전체 처리 시간
-        "total_time": total_time,  # VModel 서버 처리 시간
+        "processing_time": processing_time,  # AI 모델 생성시간 (전체)
+        "first_response_time": first_response_time,  # AI 모델 반응시간 (첫 응답)
         "result_url": result_url,
         "error": error
     }
@@ -112,9 +112,9 @@ def calculate_realtime_metrics():
     
     # 응답시간 통계
     processing_times = [d.get('processing_time', 0) for d in data if d.get('success', False)]
-    total_times = [d.get('total_time', 0) for d in data if d.get('total_time', 0)]
+    first_response_times = [d.get('first_response_time', 0) for d in data if d.get('first_response_time', 0)]
     avg_processing = sum(processing_times) / len(processing_times) if processing_times else 0
-    avg_total = sum(total_times) / len(total_times) if total_times else 0
+    avg_first_response = sum(first_response_times) / len(first_response_times) if first_response_times else 0
     
     return {
         'total_requests': total,
@@ -125,7 +125,7 @@ def calculate_realtime_metrics():
         'recall': recall,
         'f1_score': f1_score,
         'avg_processing_time': avg_processing,
-        'avg_total_time': avg_total,
+        'avg_first_response_time': avg_first_response,
         'processing_times': processing_times
     }
 
@@ -601,13 +601,14 @@ def poll_vmodel_task(request_id, task_id, max_attempts=90):
                                 total_processing_time = time.time() - api_start_time
                                 
                                 # 완료 로그 (성능 측정 1회만!)
+                                # first_response_time은 process_with_vmodel_api에서 전달됨
                                 log_vmodel_completion(
                                     request_id=request_id,
                                     task_id=task_id,
                                     success=True,
                                     result_url=result_url,
                                     processing_time=total_processing_time,
-                                    total_time=task_result.get('total_time', 0)
+                                    first_response_time=st.session_state.get(f'first_response_{request_id}', 0)
                                 )
                                 
                                 return Image.open(io.BytesIO(img_response.content))
@@ -627,7 +628,8 @@ def poll_vmodel_task(request_id, task_id, max_attempts=90):
                             task_id=task_id,
                             success=False,
                             error=error_msg,
-                            processing_time=time.time() - api_start_time
+                            processing_time=time.time() - api_start_time,
+                            first_response_time=st.session_state.get(f'first_response_{request_id}', 0)
                         )
                         
                         st.error(f"처리 실패: {error_msg}")
@@ -699,12 +701,18 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
         # 요청 시작 로그 (디버깅용만)
         log_vmodel_request(request_id, payload)
         
+        # Task 생성 API 호출 및 첫 응답 시간 측정 (AI 모델 반응시간)
+        first_response_start = time.time()
         response = requests.post(
             "https://api.vmodel.ai/api/tasks/v1/create", 
             json=payload, 
             headers=headers, 
             timeout=30
         )
+        first_response_time = time.time() - first_response_start
+        
+        # 세션 상태에 첫 응답시간 저장 (폴링에서 사용)
+        st.session_state[f'first_response_{request_id}'] = first_response_time
         
         if response.status_code == 200:
             result = response.json()
@@ -721,7 +729,8 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
                 request_id=request_id,
                 task_id=None,
                 success=False,
-                error=str(error_data)
+                error=str(error_data),
+                first_response_time=first_response_time
             )
             st.error(f"API 오류: {error_data}")
         except:
@@ -729,7 +738,8 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
                 request_id=request_id,
                 task_id=None,
                 success=False,
-                error=f"HTTP {response.status_code}"
+                error=f"HTTP {response.status_code}",
+                first_response_time=first_response_time
             )
             st.error(f"API 호출 실패: HTTP {response.status_code}")
         
@@ -740,7 +750,8 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
             request_id=request_id if 'request_id' in locals() else "unknown",
             task_id=None,
             success=False,
-            error=str(e)
+            error=str(e),
+            first_response_time=0
         )
         st.error(f"처리 중 오류 발생: {e}")
         return None
