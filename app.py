@@ -835,6 +835,43 @@ with st.sidebar:
     
     st.divider()
     
+    st.markdown("### 🧪 테스트 관리")
+    st.warning("⚠️ 테스터 전용: 기존 데이터를 백업하고 새로운 테스트를 시작합니다.")
+    
+    if st.button("🗑️ 테스트 데이터 초기화", type="secondary"):
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # 성능 데이터 백업
+        perf_file = "performance_data/performance_log.jsonl"
+        if os.path.exists(perf_file):
+            backup_file = f"performance_data/performance_log_backup_{timestamp}.jsonl"
+            os.rename(perf_file, backup_file)
+            st.info(f"백업 완료: {backup_file}")
+        
+        # 로그 파일 백업
+        log_files = ["logs/vmodel_api_raw.log", "logs/success_failures.log", "logs/session.log"]
+        for log_file in log_files:
+            if os.path.exists(log_file):
+                backup_file = f"{log_file}.backup_{timestamp}"
+                os.rename(log_file, backup_file)
+        
+        # 새 파일 생성
+        open(perf_file, 'w').close()
+        open("logs/vmodel_api_raw.log", 'w').close()
+        open("logs/success_failures.log", 'w').close()
+        open("logs/session.log", 'w').close()
+        
+        # 세션 상태 초기화
+        if 'performance_history' in st.session_state:
+            st.session_state.performance_history = []
+        
+        st.success("✅ 테스트 데이터가 초기화되었습니다!")
+        st.info("이제 새로운 테스트를 시작할 수 있습니다.")
+        time.sleep(2)
+        st.rerun()
+    
+    st.divider()
+    
     st.markdown("""
     ### 📋 사용 방법
     1. **시드 이미지 업로드** (본인 얼굴)
