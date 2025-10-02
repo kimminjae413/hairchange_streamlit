@@ -725,7 +725,7 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
             result = response.json()
             
             if result.get('code') == 200 and 'result' in result:
-    task_id = result['result'].get('task_id')
+    task_id = result['result'].get('task_id')  # ← 4칸 들여쓰기
     if task_id:
         # 6단계: Task 생성
         timestamp = datetime.now().isoformat()
