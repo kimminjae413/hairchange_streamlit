@@ -711,8 +711,8 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
         payload = {
             "version": "5c0440717a995b0bbd93377bd65dbb4fe360f67967c506aa6bd8f6b660733a7e",
             "input": {
-                "source": swap_url,
-                "target": target_url,
+                "source": target_url,    # 참조 헤어스타일 이미지
+                "target": swap_url,      # 사람 얼굴 이미지
                 "disable_safety_checker": False,
             }
         }
