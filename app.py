@@ -721,18 +721,18 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
         # 세션 상태에 첫 응답시간 저장 (폴링에서 사용)
         st.session_state[f'first_response_{request_id}'] = first_response_time
         
-        if response.status_code == 200:
+       if response.status_code == 200:
             result = response.json()
             
             if result.get('code') == 200 and 'result' in result:
-    task_id = result['result'].get('task_id')  # ← 4칸 들여쓰기
-    if task_id:
-        # 6단계: Task 생성
-        timestamp = datetime.now().isoformat()
-        step_log = f"[{timestamp}] STEP_6_TASK_CREATED: {request_id} | Task: {task_id}"
-        append_to_log("logs/vmodel_api_raw.log", step_log)
-        
-        return poll_vmodel_task(request_id, task_id, max_attempts=90)
+                task_id = result['result'].get('task_id')
+                if task_id:
+                    # 6단계: Task 생성
+                    timestamp = datetime.now().isoformat()
+                    step_log = f"[{timestamp}] STEP_6_TASK_CREATED: {request_id} | Task: {task_id}"
+                    append_to_log("logs/vmodel_api_raw.log", step_log)
+                    
+                    return poll_vmodel_task(request_id, task_id, max_attempts=90)
         
         # 에러 처리
         try:
@@ -755,6 +755,17 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
             )
             st.error(f"API 호출 실패: HTTP {response.status_code}")
         
+        return None
+        
+    except Exception as e:
+        log_vmodel_completion(
+            request_id=request_id if 'request_id' in locals() else "unknown",
+            task_id=None,
+            success=False,
+            error=str(e),
+            first_response_time=0
+        )
+        st.error(f"처리 중 오류 발생: {e}")
         return None
         
     except Exception as e:
