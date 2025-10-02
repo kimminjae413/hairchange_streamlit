@@ -663,9 +663,14 @@ source_url = "https://vmodel.ai/data/model/vmodel/ai-hairstyle/ai-hairstyle-sour
 
 st.info("테스트: VModel 공식 샘플 이미지 사용 중")
         
-        if not target_url or not source_url:
-            st.error("이미지 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.")
-            return None
+      if not target_url or not source_url:
+    st.error("이미지 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.")
+    return None
+
+# 임시 테스트 - VModel 공식 샘플 이미지로 덮어쓰기
+target_url = "https://vmodel.ai/data/model/vmodel/ai-hairstyle/ai-hairstyle-target.webp"
+source_url = "https://vmodel.ai/data/model/vmodel/ai-hairstyle/ai-hairstyle-source.png"
+st.info("테스트: VModel 공식 샘플 이미지 사용 중")
         
         log_9step_process(request_id, "2_UPLOAD_COMPLETE", "이미지 업로드 완료", {
             "target_url": target_url,
