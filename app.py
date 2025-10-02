@@ -560,7 +560,14 @@ def poll_vmodel_task(request_id, task_id, max_attempts=90):
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    api_start_time = time.time()
+    # ===== 여기에 7단계 로그 추가 =====
+    polling_start = time.time()  # 이 줄 추가
+    timestamp = datetime.now().isoformat()
+    step_log = f"[{timestamp}] STEP_7_POLLING_START: {request_id} | Task: {task_id}"
+    append_to_log("logs/vmodel_api_raw.log", step_log)
+    # ===== 여기까지 추가 =====
+    
+    api_start_time = time.time()  # 이 줄은 삭제 (위의 polling_start로 대체)
     
     for attempt in range(max_attempts):
         try:
@@ -718,9 +725,14 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
             result = response.json()
             
             if result.get('code') == 200 and 'result' in result:
-                task_id = result['result'].get('task_id')
-                if task_id:
-                    return poll_vmodel_task(request_id, task_id, max_attempts=90)
+    task_id = result['result'].get('task_id')
+    if task_id:
+        # 6단계: Task 생성
+        timestamp = datetime.now().isoformat()
+        step_log = f"[{timestamp}] STEP_6_TASK_CREATED: {request_id} | Task: {task_id}"
+        append_to_log("logs/vmodel_api_raw.log", step_log)
+        
+        return poll_vmodel_task(request_id, task_id, max_attempts=90)
         
         # 에러 처리
         try:
