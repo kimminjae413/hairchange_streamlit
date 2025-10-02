@@ -654,18 +654,16 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
         
         st.info("이미지를 업로드하고 있습니다...")
         
-        # VModel 문서에 따른 올바른 매핑
-        target_url = upload_image_to_imgur(seed_image)    # 사람 얼굴 이미지
-        source_url = upload_image_to_imgur(ref_image)     # 헤어스타일 참조 이미지
+        # 403 오류 해결을 위한 공식 샘플 이미지 테스트
+        st.warning("🧪 **API 테스트 모드**: VModel 공식 샘플 이미지로 API 연결을 확인합니다.")
         
-        if not target_url or not source_url:
-            st.error("이미지 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.")
-            return None
-
-        # VModel 공식 샘플 이미지로 테스트 (403 오류 해결 위해 임시)
-        # target_url = "https://vmodel.ai/data/model/vmodel/ai-hairstyle/ai-hairstyle-target.webp"
-        # source_url = "https://vmodel.ai/data/model/vmodel/ai-hairstyle/ai-hairstyle-source.png"
-        # st.info("테스트: VModel 공식 샘플 이미지 사용 중")
+        # VModel 공식 샘플 이미지 사용 (API 연결 테스트용)
+        target_url = "https://vmodel.ai/data/model/vmodel/ai-hairstyle/ai-hairstyle-target.webp"
+        source_url = "https://vmodel.ai/data/model/vmodel/ai-hairstyle/ai-hairstyle-source.png"
+        
+        st.info("테스트 중: 업로드한 이미지 대신 VModel 공식 샘플을 사용합니다.")
+        st.info(f"Target (얼굴): ai-hairstyle-target.webp")
+        st.info(f"Source (헤어): ai-hairstyle-source.png")
         
         log_9step_process(request_id, "2_UPLOAD_COMPLETE", "이미지 업로드 완료", {
             "target_url": target_url,
@@ -702,6 +700,10 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
             "Authorization": f"Bearer {VMODEL_API_KEY}",
             "Content-Type": "application/json"
         }
+        
+        # PowerShell 테스트와 동일한 형식으로 수정
+        st.info(f"API 키 확인: {VMODEL_API_KEY[:20]}...")
+        st.info(f"요청 페이로드: {json.dumps(payload, indent=2)}")
         
         log_vmodel_request(request_id, payload)
         
