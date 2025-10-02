@@ -349,14 +349,17 @@ def get_performance_data():
     except Exception as e:
         return {"error": f"Failed to collect performance data: {str(e)}"}
 
+# Streamlit 앱 설정
 st.set_page_config(
     page_title="AI 헤어스타일 변경 서비스",
     page_icon="💇‍♀️",
     layout="wide"
 )
 
+# API 엔드포인트 처리 (가장 먼저 실행)
 handle_verification_api()
 
+# 스타일링
 st.markdown("""
 <style>
     .main-header {
@@ -399,14 +402,6 @@ st.markdown("""
         border: 1px solid #ffeaa7;
         margin: 1rem 0;
     }
-    .metrics-box {
-        background: #e2e3e5;
-        color: #383d41;
-        padding: 1rem;
-        border-radius: 5px;
-        border: 1px solid #d6d8db;
-        margin: 1rem 0;
-    }
     .verification-box {
         background: #f8f9fa;
         color: #495057;
@@ -418,6 +413,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# 세션 상태 초기화
 if 'user_id' not in st.session_state:
     st.session_state.user_id = str(uuid.uuid4())[:8]
     
@@ -427,8 +423,10 @@ if 'seed_images' not in st.session_state:
 if 'processing_history' not in st.session_state:
     st.session_state.processing_history = []
 
+# 로깅 시스템 초기화
 setup_verification_logging()
 
+# API 설정
 VMODEL_API_KEY = st.secrets.get("VMODEL_API_KEY", "")
 
 def resize_image_if_needed(image, max_size=1024):
@@ -657,20 +655,17 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
         st.info("이미지를 업로드하고 있습니다...")
         
         # VModel 문서에 따른 올바른 매핑
-        # 임시 테스트 - VModel 공식 샘플 이미지 사용
-target_url = "https://vmodel.ai/data/model/vmodel/ai-hairstyle/ai-hairstyle-target.webp"
-source_url = "https://vmodel.ai/data/model/vmodel/ai-hairstyle/ai-hairstyle-source.png"
-
-st.info("테스트: VModel 공식 샘플 이미지 사용 중")
+        target_url = upload_image_to_imgur(seed_image)    # 사람 얼굴 이미지
+        source_url = upload_image_to_imgur(ref_image)     # 헤어스타일 참조 이미지
         
-      if not target_url or not source_url:
-    st.error("이미지 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.")
-    return None
+        if not target_url or not source_url:
+            st.error("이미지 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.")
+            return None
 
-# 임시 테스트 - VModel 공식 샘플 이미지로 덮어쓰기
-target_url = "https://vmodel.ai/data/model/vmodel/ai-hairstyle/ai-hairstyle-target.webp"
-source_url = "https://vmodel.ai/data/model/vmodel/ai-hairstyle/ai-hairstyle-source.png"
-st.info("테스트: VModel 공식 샘플 이미지 사용 중")
+        # VModel 공식 샘플 이미지로 테스트 (403 오류 해결 위해 임시)
+        # target_url = "https://vmodel.ai/data/model/vmodel/ai-hairstyle/ai-hairstyle-target.webp"
+        # source_url = "https://vmodel.ai/data/model/vmodel/ai-hairstyle/ai-hairstyle-source.png"
+        # st.info("테스트: VModel 공식 샘플 이미지 사용 중")
         
         log_9step_process(request_id, "2_UPLOAD_COMPLETE", "이미지 업로드 완료", {
             "target_url": target_url,
@@ -738,6 +733,7 @@ st.info("테스트: VModel 공식 샘플 이미지 사용 중")
                     
                     return poll_vmodel_task(request_id, task_id, max_attempts=90)
         
+        # 에러 처리
         try:
             error_data = response.json()
             log_vmodel_completion(
@@ -778,6 +774,7 @@ def create_download_link(image, filename):
     img_buffer.seek(0)
     return img_buffer.getvalue()
 
+# 메인 UI
 st.markdown("""
 <div class="main-header">
     <h1>💇‍♀️ AI 헤어스타일 변경 서비스</h1>
@@ -786,6 +783,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# API 키 체크
 if not VMODEL_API_KEY:
     st.error("""
     ⚠️ **VModel API 키가 필요합니다!**
@@ -799,6 +797,7 @@ if not VMODEL_API_KEY:
     """)
     st.stop()
 
+# 실시간 성능 지표 표시
 metrics = calculate_realtime_metrics()
 if metrics:
     st.markdown("### 🔍 실시간 성능 지표")
@@ -850,6 +849,7 @@ if metrics:
         </div>
         """, unsafe_allow_html=True)
 
+# 사이드바
 with st.sidebar:
     st.header("🎛️ 설정")
     st.info(f"사용자 ID: {st.session_state.user_id}")
@@ -926,6 +926,7 @@ with st.sidebar:
     - 9단계 처리 과정 상세 추적
     """)
 
+# 메인 탭
 tab1, tab2, tab3 = st.tabs(["🎨 헤어 변경", "📸 시드 관리", "📝 처리 기록"])
 
 with tab2:
@@ -1177,6 +1178,7 @@ with tab3:
                         help="최고 품질 PNG 다운로드"
                     )
 
+# 푸터
 st.divider()
 st.markdown("""
 <div style="text-align: center; color: #666; padding: 1rem;">
