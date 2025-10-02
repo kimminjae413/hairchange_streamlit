@@ -657,8 +657,11 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
         st.info("이미지를 업로드하고 있습니다...")
         
         # VModel 문서에 따른 올바른 매핑
-        target_url = upload_image_to_imgur(seed_image)    # 사람 얼굴 이미지
-        source_url = upload_image_to_imgur(ref_image)     # 헤어스타일 참조 이미지
+        # 임시 테스트 - VModel 공식 샘플 이미지 사용
+target_url = "https://vmodel.ai/data/model/vmodel/ai-hairstyle/ai-hairstyle-target.webp"
+source_url = "https://vmodel.ai/data/model/vmodel/ai-hairstyle/ai-hairstyle-source.png"
+
+st.info("테스트: VModel 공식 샘플 이미지 사용 중")
         
         if not target_url or not source_url:
             st.error("이미지 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.")
