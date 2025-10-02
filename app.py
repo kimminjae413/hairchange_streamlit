@@ -9,13 +9,11 @@ import json
 import os
 from datetime import datetime
 
-# 테스터 검증용 로깅 시스템 추가
 def setup_verification_logging():
     """테스터 독립 검증을 위한 로깅 시스템 초기화"""
     os.makedirs("logs", exist_ok=True)
     os.makedirs("performance_data", exist_ok=True)
     
-    # 세션 시작 로그
     if 'logging_initialized' not in st.session_state:
         timestamp = datetime.now().isoformat()
         session_start_log = f"[{timestamp}] SESSION_START: User {st.session_state.get('user_id', 'unknown')} started session"
@@ -29,6 +27,14 @@ def append_to_log(file_path, message):
             f.write(f"{message}\n")
     except Exception as e:
         print(f"로그 기록 실패: {e}")
+
+def log_9step_process(request_id, step, message, extra_data=None):
+    """9단계 처리 과정 상세 로깅"""
+    timestamp = datetime.now().isoformat()
+    log_entry = f"[{timestamp}] STEP_{step}: {request_id} - {message}"
+    if extra_data:
+        log_entry += f" | Data: {json.dumps(extra_data, ensure_ascii=False)}"
+    append_to_log("logs/vmodel_api_raw.log", log_entry)
 
 def log_vmodel_request(request_id, request_data):
     """변환 요청 시작 로그 (디버깅용만, 성능 측정 제외)"""
@@ -47,7 +53,6 @@ def log_vmodel_completion(request_id, task_id, success, result_url=None, error=N
     """변환 완료 로그 (성능 측정 포함) - 실제 완료시 1회만 호출"""
     timestamp = datetime.now().isoformat()
     
-    # 원본 응답 로그
     response_data = {
         "request_id": request_id,
         "task_id": task_id,
@@ -60,15 +65,12 @@ def log_vmodel_completion(request_id, task_id, success, result_url=None, error=N
     api_response_log = f"[{timestamp}] COMPLETION: {json.dumps(response_data, ensure_ascii=False)}"
     append_to_log("logs/vmodel_api_raw.log", api_response_log)
     
-    # 성공/실패 로그
     if success:
         success_log = f"[{timestamp}] SUCCESS - {request_id} completed in {processing_time:.1f}s (first response: {first_response_time:.3f}s)"
     else:
         success_log = f"[{timestamp}] FAILED - {request_id}: {error}"
     append_to_log("logs/success_failures.log", success_log)
     
-    # 성능 데이터 기록 (완료시 1회만!)
-    # KTCC 기준: TP = 성공 + result_url 있음, FP = 성공이지만 result_url 없음, FN = 실패
     completed = success and bool(result_url)
     
     performance_record = {
@@ -76,20 +78,18 @@ def log_vmodel_completion(request_id, task_id, success, result_url=None, error=N
         "request_id": request_id,
         "user_id": st.session_state.get('user_id', 'unknown'),
         "task_id": task_id,
-        "success": success,  # API 호출 성공 여부
-        "completed": completed,  # 실제 이미지 생성 완료 여부
-        "processing_time": processing_time,  # AI 모델 생성시간 (전체)
-        "first_response_time": first_response_time,  # AI 모델 반응시간 (첫 응답)
+        "success": success,
+        "completed": completed,
+        "processing_time": processing_time,
+        "first_response_time": first_response_time,
         "result_url": result_url,
         "error": error
     }
     
-    # 성능 데이터를 JSONL 파일에 저장
     performance_file = "performance_data/performance_log.jsonl"
     with open(performance_file, 'a', encoding='utf-8') as f:
         f.write(json.dumps(performance_record, ensure_ascii=False) + '\n')
     
-    # 세션 상태에도 저장 (실시간 통계용)
     if 'performance_history' not in st.session_state:
         st.session_state.performance_history = []
     st.session_state.performance_history.append(performance_record)
@@ -104,13 +104,11 @@ def calculate_realtime_metrics():
     successful = len([d for d in data if d.get('success', False)])
     completed = len([d for d in data if d.get('completed', False)])
     
-    # 정부 기준 지표 계산
     accuracy = (successful / total) * 100 if total > 0 else 0
     precision = (completed / successful) * 100 if successful > 0 else 0
     recall = (completed / total) * 100 if total > 0 else 0
     f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
     
-    # 응답시간 통계
     processing_times = [d.get('processing_time', 0) for d in data if d.get('success', False)]
     first_response_times = [d.get('first_response_time', 0) for d in data if d.get('first_response_time', 0)]
     avg_processing = sum(processing_times) / len(processing_times) if processing_times else 0
@@ -129,7 +127,6 @@ def calculate_realtime_metrics():
         'processing_times': processing_times
     }
 
-# API 엔드포인트 (테스터 검증용)
 def handle_verification_api():
     """테스터 검증용 API 엔드포인트 처리"""
     query_params = st.query_params
@@ -138,19 +135,16 @@ def handle_verification_api():
         api_type = query_params["api"]
         
         if api_type == "logs":
-            # 로그 데이터 반환
             logs_data = get_logs_data()
             st.json(logs_data)
             st.stop()
             
         elif api_type == "performance":
-            # 성능 데이터 반환
             performance_data = get_performance_data()
             st.json(performance_data)
             st.stop()
         
         elif api_type == "metrics":
-            # 성능 지표 상세 계산 과정 표시
             display_detailed_metrics()
             st.stop()
 
@@ -158,7 +152,6 @@ def display_detailed_metrics():
     """상세 성능 지표 및 계산 과정 표시"""
     st.title("🎯 AI 성능 평가 결과 (KTCC/KOLAS 기준)")
     
-    # 성능 데이터 로드
     performance_data = get_performance_data()
     
     if not performance_data.get('data'):
@@ -178,19 +171,16 @@ def display_detailed_metrics():
     successful_requests = len([d for d in data if d.get('success', False)])
     completed_requests = len([d for d in data if d.get('completed', False)])
     
-    # 응답시간 통계
     processing_times = [d.get('processing_time', 0) for d in data if d.get('success', False)]
-    total_times = [d.get('total_time', 0) for d in data if d.get('total_time', 0)]
+    first_response_times = [d.get('first_response_time', 0) for d in data if d.get('first_response_time', 0)]
     avg_processing = sum(processing_times) / len(processing_times) if processing_times else 0
-    avg_total = sum(total_times) / len(total_times) if total_times else 0
+    avg_first_response = sum(first_response_times) / len(first_response_times) if first_response_times else 0
     
-    # 지표 계산
     accuracy = (successful_requests / total_requests) * 100 if total_requests > 0 else 0
     precision = (completed_requests / successful_requests) * 100 if successful_requests > 0 else 0
     recall = (completed_requests / total_requests) * 100 if total_requests > 0 else 0
     f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
     
-    # 원본 데이터 표시
     st.subheader("📊 측정 데이터")
     col1, col2 = st.columns(2)
     
@@ -207,7 +197,6 @@ def display_detailed_metrics():
         st.write(f"- Recall: {recall:.1f}%")
         st.write(f"- F1-Score: {f1_score:.1f}%")
     
-    # 상세 계산 과정
     st.subheader("🔢 KTCC 기준 계산 공식")
     
     st.markdown(f"""
@@ -247,17 +236,16 @@ def display_detailed_metrics():
 
 **6. AI 모델 반응시간**
 ```
-측정값: {avg_total:.1f}초 (평균)
-기준: 1초 이내 → {'✅ 통과' if avg_total <= 1 else '❌ 미달'}
+측정값: {avg_first_response:.3f}초 (평균)
+기준: 1초 이내 → {'✅ 통과' if avg_first_response <= 1 else '❌ 미달'}
 ```
 """)
     
-    # 최종 평가 결과 표
     st.subheader("📋 최종 평가 결과")
     
     results_data = {
         "평가항목": ["Accuracy", "Precision", "Recall", "F1-Score", "생성시간", "반응시간"],
-        "측정값": [f"{accuracy:.1f}%", f"{precision:.1f}%", f"{recall:.1f}%", f"{f1_score:.1f}%", f"{avg_processing:.1f}초", f"{avg_total:.1f}초"],
+        "측정값": [f"{accuracy:.1f}%", f"{precision:.1f}%", f"{recall:.1f}%", f"{f1_score:.1f}%", f"{avg_processing:.1f}초", f"{avg_first_response:.3f}초"],
         "정부기준": ["75% 이상", "75% 이상", "75% 이상", "75% 이상", "60초 이내", "1초 이내"],
         "통과여부": [
             "✅" if accuracy >= 75 else "❌",
@@ -265,13 +253,12 @@ def display_detailed_metrics():
             "✅" if recall >= 75 else "❌",
             "✅" if f1_score >= 75 else "❌",
             "✅" if avg_processing <= 60 else "❌",
-            "✅" if avg_total <= 1 else "❌"
+            "✅" if avg_first_response <= 1 else "❌"
         ]
     }
     
     st.table(results_data)
     
-    # 검증 가능한 증거
     st.subheader("🛡️ 독립 검증 증거")
     st.markdown(f"""
 **1. 완료된 Task ID 목록:**
@@ -317,7 +304,6 @@ def get_logs_data():
                         content = f.read()
                         logs_data["log_files"][os.path.basename(log_file)] = content
                         
-                        # 최근 로그 파싱
                         lines = content.strip().split('\n')
                         for line in lines[-10:]:
                             if line.strip() and line.startswith('['):
@@ -337,11 +323,9 @@ def get_performance_data():
     try:
         performance_data = []
         
-        # 디렉토리 생성 확인
         if not os.path.exists("performance_data"):
             os.makedirs("performance_data")
         
-        # JSONL 파일에서 성능 데이터 읽기
         performance_file = "performance_data/performance_log.jsonl"
         if os.path.exists(performance_file):
             with open(performance_file, 'r', encoding='utf-8') as f:
@@ -365,17 +349,14 @@ def get_performance_data():
     except Exception as e:
         return {"error": f"Failed to collect performance data: {str(e)}"}
 
-# 페이지 설정
 st.set_page_config(
     page_title="AI 헤어스타일 변경 서비스",
     page_icon="💇‍♀️",
     layout="wide"
 )
 
-# API 엔드포인트 처리 (가장 먼저 실행)
 handle_verification_api()
 
-# 스타일링
 st.markdown("""
 <style>
     .main-header {
@@ -437,7 +418,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 세션 상태 초기화
 if 'user_id' not in st.session_state:
     st.session_state.user_id = str(uuid.uuid4())[:8]
     
@@ -447,10 +427,8 @@ if 'seed_images' not in st.session_state:
 if 'processing_history' not in st.session_state:
     st.session_state.processing_history = []
 
-# 로깅 시스템 초기화
 setup_verification_logging()
 
-# API 설정
 VMODEL_API_KEY = st.secrets.get("VMODEL_API_KEY", "")
 
 def resize_image_if_needed(image, max_size=1024):
@@ -554,13 +532,14 @@ def upload_to_tempfile_io(image):
         return None
 
 def poll_vmodel_task(request_id, task_id, max_attempts=90):
-    """VModel Task 상태 폴링 - 완료시 1회만 성능 로그 기록"""
+    """VModel Task 상태 폴링 - 9단계 로깅 포함"""
     headers = {"Authorization": f"Bearer {VMODEL_API_KEY}"}
     
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    api_start_time = time.time()
+    polling_start = time.time()
+    log_9step_process(request_id, "7_POLLING_START", f"상태 폴링 시작 | Task: {task_id}")
     
     for attempt in range(max_attempts):
         try:
@@ -577,7 +556,6 @@ def poll_vmodel_task(request_id, task_id, max_attempts=90):
                     task_result = result['result']
                     status = task_result.get('status', 'processing')
                     
-                    # 디버깅 로그만 (성능 측정 제외)
                     log_vmodel_polling(request_id, task_id, status, attempt + 1)
                     
                     progress = min(0.95, (attempt + 1) * 0.01)
@@ -594,14 +572,22 @@ def poll_vmodel_task(request_id, task_id, max_attempts=90):
                         output = task_result.get('output', [])
                         if output and len(output) > 0:
                             result_url = output[0]
+                            
+                            log_9step_process(request_id, "8_DOWNLOAD_START", f"결과 이미지 다운로드 시작 | URL: {result_url}")
+                            
                             st.info(f"결과 이미지 다운로드 중: {result_url}")
                             
                             img_response = requests.get(result_url, timeout=30)
                             if img_response.status_code == 200:
-                                total_processing_time = time.time() - api_start_time
+                                total_processing_time = time.time() - polling_start
                                 
-                                # 완료 로그 (성능 측정 1회만!)
-                                # first_response_time은 process_with_vmodel_api에서 전달됨
+                                log_9step_process(request_id, "9_COMPLETE", f"헤어스타일 변환 완료 | 총 처리시간: {total_processing_time:.2f}초", {
+                                    "task_id": task_id,
+                                    "result_url": result_url,
+                                    "processing_time": total_processing_time,
+                                    "image_size": len(img_response.content)
+                                })
+                                
                                 log_vmodel_completion(
                                     request_id=request_id,
                                     task_id=task_id,
@@ -622,13 +608,12 @@ def poll_vmodel_task(request_id, task_id, max_attempts=90):
                     elif status == 'failed':
                         error_msg = task_result.get('error', '알 수 없는 오류')
                         
-                        # 실패 로그 (성능 측정 1회만!)
                         log_vmodel_completion(
                             request_id=request_id,
                             task_id=task_id,
                             success=False,
                             error=error_msg,
-                            processing_time=time.time() - api_start_time,
+                            processing_time=time.time() - polling_start,
                             first_response_time=st.session_state.get(f'first_response_{request_id}', 0)
                         )
                         
@@ -654,34 +639,51 @@ def poll_vmodel_task(request_id, task_id, max_attempts=90):
     return None
 
 def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
-    """VModel API로 헤어 변경 처리"""
+    """VModel API로 헤어 변경 처리 - 9단계 로깅 포함, VModel 문서 호환"""
     
     if not VMODEL_API_KEY:
         st.error("⚠️ VModel API 키가 설정되지 않았습니다. Streamlit Secrets에서 VMODEL_API_KEY를 설정해주세요.")
         return None
     
     try:
-        # 고유 request_id 생성
         request_id = f"req_{int(time.time())}_{uuid.uuid4().hex[:8]}"
         
-        st.info("이미지를 업로드하고 있습니다...")
-        target_url = upload_image_to_imgur(seed_image)
-        swap_url = upload_image_to_imgur(ref_image)
+        log_9step_process(request_id, "1_REQUEST_START", "헤어스타일 변환 요청 시작", {
+            "quality_mode": quality_mode,
+            "seed_size": seed_image.size,
+            "ref_size": ref_image.size
+        })
         
-        if not target_url or not swap_url:
+        st.info("이미지를 업로드하고 있습니다...")
+        
+        # VModel 문서에 따른 올바른 매핑
+        target_url = upload_image_to_imgur(seed_image)    # 사람 얼굴 이미지
+        source_url = upload_image_to_imgur(ref_image)     # 헤어스타일 참조 이미지
+        
+        if not target_url or not source_url:
             st.error("이미지 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.")
             return None
         
+        log_9step_process(request_id, "2_UPLOAD_COMPLETE", "이미지 업로드 완료", {
+            "target_url": target_url,
+            "source_url": source_url
+        })
+        
         st.success("이미지 업로드 완료!")
         
+        # VModel 공식 문서 형식에 맞춘 payload
         payload = {
             "version": "5c0440717a995b0bbd93377bd65dbb4fe360f67967c506aa6bd8f6b660733a7e",
             "input": {
-                "source": swap_url,
-                "target": target_url,
+                "source": source_url,    # 헤어스타일 참조 이미지
+                "target": target_url,    # 사람 얼굴 이미지
                 "disable_safety_checker": False,
             }
         }
+        
+        log_9step_process(request_id, "3_API_PREPARED", "VModel API 요청 준비 완료", {
+            "payload": payload
+        })
         
         if quality_mode == "high":
             st.markdown("""
@@ -698,10 +700,10 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
             "Content-Type": "application/json"
         }
         
-        # 요청 시작 로그 (디버깅용만)
         log_vmodel_request(request_id, payload)
         
-        # Task 생성 API 호출 및 첫 응답 시간 측정 (AI 모델 반응시간)
+        log_9step_process(request_id, "4_API_CALL_START", "VModel API 호출 시작")
+        
         first_response_start = time.time()
         response = requests.post(
             "https://api.vmodel.ai/api/tasks/v1/create", 
@@ -711,7 +713,11 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
         )
         first_response_time = time.time() - first_response_start
         
-        # 세션 상태에 첫 응답시간 저장 (폴링에서 사용)
+        log_9step_process(request_id, "5_FIRST_RESPONSE", f"첫 응답 수신 | 반응시간: {first_response_time:.3f}초", {
+            "status_code": response.status_code,
+            "response_time": first_response_time
+        })
+        
         st.session_state[f'first_response_{request_id}'] = first_response_time
         
         if response.status_code == 200:
@@ -720,9 +726,10 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
             if result.get('code') == 200 and 'result' in result:
                 task_id = result['result'].get('task_id')
                 if task_id:
+                    log_9step_process(request_id, "6_TASK_CREATED", f"Task 생성 완료 | Task ID: {task_id}")
+                    
                     return poll_vmodel_task(request_id, task_id, max_attempts=90)
         
-        # 에러 처리
         try:
             error_data = response.json()
             log_vmodel_completion(
@@ -763,7 +770,6 @@ def create_download_link(image, filename):
     img_buffer.seek(0)
     return img_buffer.getvalue()
 
-# 메인 UI
 st.markdown("""
 <div class="main-header">
     <h1>💇‍♀️ AI 헤어스타일 변경 서비스</h1>
@@ -772,7 +778,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# API 키 체크
 if not VMODEL_API_KEY:
     st.error("""
     ⚠️ **VModel API 키가 필요합니다!**
@@ -786,7 +791,6 @@ if not VMODEL_API_KEY:
     """)
     st.stop()
 
-# 실시간 성능 지표 표시
 metrics = calculate_realtime_metrics()
 if metrics:
     st.markdown("### 🔍 실시간 성능 지표")
@@ -813,16 +817,23 @@ if metrics:
         <div class="verification-box">
         <h4>📊 정확한 성능 측정</h4>
         
-        <strong>측정 방식:</strong><br>
-        • 각 변환마다 고유 request_id 부여<br>
-        • 완료시 1회만 성능 로그 기록 (중복 제거)<br>
-        • 폴링 중간 단계는 디버깅만 (성능 측정 제외)<br><br>
+        <strong>9단계 처리 과정:</strong><br>
+        1. REQUEST_START: 요청 시작<br>
+        2. UPLOAD_COMPLETE: 이미지 업로드 완료<br>
+        3. API_PREPARED: API 요청 준비<br>
+        4. API_CALL_START: API 호출<br>
+        5. FIRST_RESPONSE: 첫 응답 수신 (반응시간)<br>
+        6. TASK_CREATED: Task 생성 완료<br>
+        7. POLLING_START: 상태 폴링 시작<br>
+        8. DOWNLOAD_START: 결과 다운로드<br>
+        9. COMPLETE: 처리 완료 (생성시간)<br><br>
         
         <strong>현재 측정값:</strong><br>
         • 전체 변환: {metrics['total_requests']}회<br>
         • 성공: {metrics['successful_requests']}회<br>
         • 완료: {metrics['completed_requests']}회<br>
-        • 평균 처리시간: {metrics['avg_processing_time']:.1f}초<br><br>
+        • 평균 처리시간: {metrics['avg_processing_time']:.1f}초<br>
+        • 평균 반응시간: {metrics['avg_first_response_time']:.3f}초<br><br>
         
         <strong>독립 검증:</strong><br>
         • 상세 분석: <code>?api=metrics</code><br>
@@ -831,7 +842,6 @@ if metrics:
         </div>
         """, unsafe_allow_html=True)
 
-# 사이드바
 with st.sidebar:
     st.header("🎛️ 설정")
     st.info(f"사용자 ID: {st.session_state.user_id}")
@@ -852,27 +862,23 @@ with st.sidebar:
     if st.button("🗑️ 테스트 데이터 초기화", type="secondary"):
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        # 성능 데이터 백업
         perf_file = "performance_data/performance_log.jsonl"
         if os.path.exists(perf_file):
             backup_file = f"performance_data/performance_log_backup_{timestamp}.jsonl"
             os.rename(perf_file, backup_file)
             st.info(f"백업 완료: {backup_file}")
         
-        # 로그 파일 백업
         log_files = ["logs/vmodel_api_raw.log", "logs/success_failures.log", "logs/session.log"]
         for log_file in log_files:
             if os.path.exists(log_file):
                 backup_file = f"{log_file}.backup_{timestamp}"
                 os.rename(log_file, backup_file)
         
-        # 새 파일 생성
         open(perf_file, 'w').close()
         open("logs/vmodel_api_raw.log", 'w').close()
         open("logs/success_failures.log", 'w').close()
         open("logs/session.log", 'w').close()
         
-        # 세션 상태 초기화
         if 'performance_history' in st.session_state:
             st.session_state.performance_history = []
         
@@ -909,9 +915,9 @@ with st.sidebar:
     - SSH 접속 후 독립 검증 가능
     - `python tester_verification.py --metrics`
     - KTCC/KOLAS 기준 자동 계산
+    - 9단계 처리 과정 상세 추적
     """)
 
-# 메인 탭
 tab1, tab2, tab3 = st.tabs(["🎨 헤어 변경", "📸 시드 관리", "📝 처리 기록"])
 
 with tab2:
@@ -1163,14 +1169,13 @@ with tab3:
                         help="최고 품질 PNG 다운로드"
                     )
 
-# 푸터
 st.divider()
 st.markdown("""
 <div style="text-align: center; color: #666; padding: 1rem;">
     💇‍♀️ AI Hair Style Transfer | Made with ❤️ using Streamlit Cloud<br>
     <small>🎨 고품질 모드로 선명한 헤어 디테일을 경험해보세요!</small><br>
     <small>🔍 <strong>독립 검증 API</strong>: ?api=logs | ?api=performance | ?api=metrics</small><br>
-    <small>📊 정확한 성능 측정: 완료시 1회만 기록, 중복 제거, request_id 추적</small><br>
+    <small>📊 정확한 성능 측정: 9단계 처리 추적, 완료시 1회만 기록, request_id 추적</small><br>
     <small>세션 종료시 데이터가 삭제됩니다. 중요한 결과는 다운로드하세요!</small>
 </div>
 """, unsafe_allow_html=True)
