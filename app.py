@@ -775,7 +775,10 @@ def create_download_link(image, filename):
 
 # 메인 UI
 st.markdown("""
-<div class="main-header">
+<div class="main-header" style="position: relative;">
+    <div style="position: absolute; top: 15px; right: 20px; background: rgba(255,255,255,0.25); padding: 6px 16px; border-radius: 20px; font-size: 0.85em; font-weight: 600; backdrop-filter: blur(10px);">
+        ver.1.0
+    </div>
     <h1>💇‍♀️ AI 헤어스타일 변경 서비스</h1>
     <p>AI로 원하는 헤어스타일을 미리 체험해보세요!</p>
     <small>🎯 <strong>고품질 모드</strong> - 선명한 머리카락 디테일 지원</small>
