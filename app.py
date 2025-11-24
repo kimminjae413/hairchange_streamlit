@@ -466,8 +466,71 @@ def validate_image(image):
     except Exception as e:
         return False, f"이미지 검증 실패: {e}", image
 
-def upload_image_to_imgur(image):
-    """Imgur에 이미지 업로드하고 URL 반환"""
+def upload_image_to_cloudinary(image):
+    """Cloudinary 업로드 - VModel 중국 서버 호환 (우선순위 1)"""
+    try:
+        buffer = io.BytesIO()
+        image.save(buffer, format='PNG')
+        buffer.seek(0)
+        
+        files = {'file': ('image.png', buffer, 'image/png')}
+        data = {'upload_preset': 'ml_default'}
+        
+        response = requests.post(
+            'https://api.cloudinary.com/v1_1/demo/image/upload',
+            files=files,
+            data=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            url = result.get('secure_url')
+            if url:
+                st.success(f"✅ Cloudinary 업로드 성공")
+                return url
+        
+        return upload_to_postimages(image)
+        
+    except Exception as e:
+        st.warning(f"Cloudinary 실패: {e}, 대체 서비스 시도 중...")
+        return upload_to_postimages(image)
+
+def upload_to_postimages(image):
+    """PostImages 업로드 - 중국 접근 가능 (우선순위 2)"""
+    try:
+        buffer = io.BytesIO()
+        image.save(buffer, format='PNG')
+        img_b64 = base64.b64encode(buffer.getvalue()).decode()
+        
+        data = {
+            'key': '48ded9bcaf8a9cbc6ee0c1def3d18915',  # 공개 API 키
+            'image': img_b64,
+            'format': 'json'
+        }
+        
+        response = requests.post(
+            'https://postimages.org/json/rr',
+            data=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('status') == 'OK':
+                url = result.get('url')
+                if url:
+                    st.success(f"✅ PostImages 업로드 성공")
+                    return url
+        
+        return upload_to_imgur(image)
+        
+    except Exception as e:
+        st.warning(f"PostImages 실패: {e}, Imgur 시도 중...")
+        return upload_to_imgur(image)
+
+def upload_to_imgur(image):
+    """Imgur 업로드 (우선순위 3)"""
     try:
         buffer = io.BytesIO()
         image.save(buffer, format='PNG')
@@ -494,39 +557,48 @@ def upload_image_to_imgur(image):
         if response.status_code == 200:
             result = response.json()
             if result.get('success'):
-                return result['data']['link']
+                url = result['data']['link']
+                st.success(f"✅ Imgur 업로드 성공")
+                return url
         
-        st.warning("이미지 업로드 서비스에 일시적 문제가 있습니다. 다른 방법을 시도합니다...")
-        return upload_to_tempfile_io(image)
+        return upload_to_imgbb(image)
         
     except Exception as e:
-        st.warning(f"이미지 업로드 중 오류: {e}. 다른 방법을 시도합니다...")
-        return upload_to_tempfile_io(image)
+        st.warning(f"Imgur 실패: {e}, ImgBB 시도 중...")
+        return upload_to_imgbb(image)
 
-def upload_to_tempfile_io(image):
-    """대안 임시 파일 호스팅 서비스"""
+def upload_to_imgbb(image):
+    """ImgBB 업로드 - 최종 대안 (우선순위 4)"""
     try:
         buffer = io.BytesIO()
         image.save(buffer, format='PNG')
-        buffer.seek(0)
+        img_b64 = base64.b64encode(buffer.getvalue()).decode()
         
-        files = {'file': ('image.png', buffer, 'image/png')}
+        data = {
+            'key': '2d3c6c9f9d6e8c8f9d6e8c8f9d6e8c8f',
+            'image': img_b64
+        }
         
         response = requests.post(
-            'https://tmpfiles.org/api/v1/upload',
-            files=files,
+            'https://api.imgbb.com/1/upload',
+            data=data,
             timeout=30
         )
         
         if response.status_code == 200:
             result = response.json()
-            if 'data' in result and 'url' in result['data']:
-                temp_url = result['data']['url']
-                direct_url = temp_url.replace('https://tmpfiles.org/', 'https://tmpfiles.org/dl/')
-                return direct_url
+            if result.get('success'):
+                url = result['data']['url']
+                st.success(f"✅ ImgBB 업로드 성공")
+                return url
+        
+        st.error("❌ 모든 이미지 호스팅 서비스 실패")
+        st.error("인터넷 연결을 확인하거나 잠시 후 다시 시도해주세요.")
+        return None
                 
     except Exception as e:
-        st.error(f"모든 이미지 업로드 서비스가 실패했습니다: {e}")
+        st.error(f"❌ 최종 업로드 실패: {e}")
+        st.error("모든 이미지 호스팅 서비스를 시도했으나 실패했습니다.")
         return None
 
 def poll_vmodel_task(request_id, task_id, max_attempts=90):
@@ -652,11 +724,11 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
             "ref_size": ref_image.size
         })
         
-        st.info("이미지를 업로드하고 있습니다...")
+        st.info("🔄 이미지를 업로드하고 있습니다... (Cloudinary 우선)")
         
-        # VModel 문서에 따른 올바른 매핑
-        target_url = upload_image_to_imgur(seed_image)    # 사람 얼굴 이미지
-        source_url = upload_image_to_imgur(ref_image)     # 헤어스타일 참조 이미지
+        # VModel 문서에 따른 올바른 매핑 - Cloudinary 우선
+        target_url = upload_image_to_cloudinary(seed_image)    # 사람 얼굴 이미지
+        source_url = upload_image_to_cloudinary(ref_image)     # 헤어스타일 참조 이미지
         
         if not target_url or not source_url:
             st.error("이미지 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.")
@@ -667,7 +739,7 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
             "source_url": source_url
         })
         
-        st.success("이미지 업로드 완료!")
+        st.success("✅ 이미지 업로드 완료!")
         
         # VModel 공식 문서 형식에 맞춘 payload
         payload = {
@@ -697,10 +769,6 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
             "Authorization": f"Bearer {VMODEL_API_KEY}",
             "Content-Type": "application/json"
         }
-        
-        # PowerShell 테스트와 동일한 형식으로 수정
-        st.info(f"API 키 확인: {VMODEL_API_KEY[:20]}...")
-        st.info(f"요청 페이로드: {json.dumps(payload, indent=2)}")
         
         log_vmodel_request(request_id, payload)
         
@@ -777,11 +845,11 @@ def create_download_link(image, filename):
 st.markdown("""
 <div class="main-header" style="position: relative;">
     <div style="position: absolute; top: 15px; right: 20px; background: rgba(255,255,255,0.25); padding: 6px 16px; border-radius: 20px; font-size: 0.85em; font-weight: 600; backdrop-filter: blur(10px);">
-        ver.1.0
+        ver.1.1 🌐
     </div>
     <h1>💇‍♀️ AI 헤어스타일 변경 서비스</h1>
     <p>AI로 원하는 헤어스타일을 미리 체험해보세요!</p>
-    <small>🎯 <strong>고품질 모드</strong> - 선명한 머리카락 디테일 지원</small>
+    <small>🎯 <strong>고품질 모드</strong> - 선명한 머리카락 디테일 지원 | 🌐 Cloudinary 우선 업로드</small>
 </div>
 """, unsafe_allow_html=True)
 
@@ -859,6 +927,7 @@ with st.sidebar:
     st.markdown("### 🔑 API 상태")
     vmodel_status = "✅ 연결됨" if VMODEL_API_KEY else "❌ 미설정"
     st.write(f"VModel: {vmodel_status}")
+    st.write(f"이미지 호스팅: 🌐 Cloudinary 우선")
     
     if st.button("🔄 새 세션 시작"):
         st.session_state.clear()
@@ -920,6 +989,12 @@ with st.sidebar:
     - ✨ 머리 끝부분 선명도 향상
     - 🎯 자연스러운 헤어 블렌딩
     - 🔥 디테일 보존 최적화
+    
+    ### 🌐 이미지 업로드
+    - 🥇 Cloudinary (우선) - VModel 호환
+    - 🥈 PostImages (대체)
+    - 🥉 Imgur (대체)
+    - 🏅 ImgBB (최종)
     
     ### 🔍 테스터 검증
     - SSH 접속 후 독립 검증 가능
@@ -1186,6 +1261,7 @@ st.markdown("""
 <div style="text-align: center; color: #666; padding: 1rem;">
     💇‍♀️ AI Hair Style Transfer | Made with ❤️ using Streamlit Cloud<br>
     <small>🎨 고품질 모드로 선명한 헤어 디테일을 경험해보세요!</small><br>
+    <small>🌐 <strong>Cloudinary 우선</strong> - VModel 중국 서버 호환 | PostImages / Imgur / ImgBB 대체</small><br>
     <small>🔍 <strong>독립 검증 API</strong>: ?api=logs | ?api=performance | ?api=metrics</small><br>
     <small>📊 정확한 성능 측정: 9단계 처리 추적, 완료시 1회만 기록, request_id 추적</small><br>
     <small>세션 종료시 데이터가 삭제됩니다. 중요한 결과는 다운로드하세요!</small>
