@@ -8,6 +8,7 @@ import uuid
 import json
 import os
 from datetime import datetime
+import google.generativeai as genai
 
 def setup_verification_logging():
     """테스터 독립 검증을 위한 로깅 시스템 초기화"""
@@ -428,6 +429,104 @@ setup_verification_logging()
 
 # API 설정
 VMODEL_API_KEY = st.secrets.get("VMODEL_API_KEY", "")
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+
+# Gemini 설정
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
+def enhance_with_gemini(image, gender="male"):
+    """
+    Gemini로 헤어 이미지 후처리 (얼굴-헤어 조화 개선)
+
+    Args:
+        image: PIL Image 객체
+        gender: 성별 ('male' 또는 'female')
+
+    Returns:
+        PIL Image 또는 None
+    """
+    if not GEMINI_API_KEY:
+        st.warning("⚠️ Gemini API 키가 설정되지 않아 후처리를 건너뜁니다.")
+        return None
+
+    try:
+        st.info("🤖 Gemini 후처리 시작...")
+
+        # 이미지를 바이트로 변환
+        buffer = io.BytesIO()
+        image.save(buffer, format='JPEG', quality=90)
+        image_bytes = buffer.getvalue()
+
+        # 성별에 따른 프롬프트 조정
+        if gender == "female":
+            gender_prompt = """- For long hair: ensure hair ends are sharp and clear, not blurry or smudged
+- Each strand should be distinct, especially at the tips"""
+        else:
+            gender_prompt = """- For short hair: ensure clean edges around the hairline and sideburns"""
+
+        # 후처리 프롬프트
+        prompt = f"""You are a photo retouching expert. Your task is to make this hair swap photo look natural.
+
+#1 PRIORITY - HAIR-FACE HARMONY (MOST IMPORTANT):
+- Make the hair blend NATURALLY with the face and skin tone
+- Adjust the lighting and shadows so hair and face look like one unified photo
+- The hairline where hair meets forehead/skin must look completely seamless
+- Match the color temperature between hair and face
+
+#2 PRIORITY - DO NOT MODIFY THE HAIRSTYLE:
+- Keep the EXACT same hairstyle shape, length, and style
+- Do NOT change the hair color
+- Do NOT change the hair volume or direction
+- Do NOT add or remove any hair
+
+#3 PRIORITY - Natural Realism:
+- Hair texture should look like real human hair
+- Remove any artificial/AI-generated artifacts
+- Ensure consistent lighting across the entire image
+{gender_prompt}
+
+ABSOLUTELY DO NOT CHANGE:
+- The person's face, facial features, expression
+- The hairstyle shape, length, color, volume
+- The background
+- The clothing
+
+OUTPUT: The same photo with improved hair-face integration. The hair must look like it naturally belongs to this person."""
+
+        # Gemini 모델 생성 (이미지 생성 지원 모델)
+        model = genai.GenerativeModel('gemini-2.0-flash-exp')
+
+        # 이미지 파트 생성
+        image_part = {
+            "mime_type": "image/jpeg",
+            "data": image_bytes
+        }
+
+        # Gemini API 호출
+        response = model.generate_content(
+            [image_part, prompt],
+            generation_config={
+                "temperature": 0.4
+            }
+        )
+
+        # 응답에서 이미지 추출
+        if response.candidates:
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'inline_data') and part.inline_data:
+                    # Base64 이미지 디코딩
+                    image_data = base64.b64decode(part.inline_data.data)
+                    enhanced_image = Image.open(io.BytesIO(image_data))
+                    st.success("✅ Gemini 후처리 완료!")
+                    return enhanced_image
+
+        st.warning("⚠️ Gemini 응답에 이미지가 없습니다.")
+        return None
+
+    except Exception as e:
+        st.warning(f"⚠️ Gemini 후처리 실패: {e}")
+        return None
 
 def resize_image_if_needed(image, max_size=1024):
     """이미지가 너무 크면 자동으로 리사이즈"""
@@ -708,8 +807,8 @@ def poll_vmodel_task(request_id, task_id, max_attempts=90):
     st.error("처리 시간 초과 - VModel 서버가 응답하지 않습니다")
     return None
 
-def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
-    """VModel API로 헤어 변경 처리 - 9단계 로깅 포함, VModel 문서 호환"""
+def process_with_vmodel_api(seed_image, ref_image, quality_mode="high", enable_gemini=False, gender="male"):
+    """VModel API로 헤어 변경 처리 - 9단계 로깅 포함, VModel 문서 호환 + Gemini 후처리"""
     
     if not VMODEL_API_KEY:
         st.error("⚠️ VModel API 키가 설정되지 않았습니다. Streamlit Secrets에서 VMODEL_API_KEY를 설정해주세요.")
@@ -797,8 +896,21 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high"):
                 task_id = result['result'].get('task_id')
                 if task_id:
                     log_9step_process(request_id, "6_TASK_CREATED", f"Task 생성 완료 | Task ID: {task_id}")
-                    
-                    return poll_vmodel_task(request_id, task_id, max_attempts=90)
+
+                    # VModel 결과 가져오기
+                    vmodel_result = poll_vmodel_task(request_id, task_id, max_attempts=90)
+
+                    # Gemini 후처리 적용 (옵션이 활성화된 경우)
+                    if vmodel_result and enable_gemini:
+                        st.info("🔄 Gemini 후처리 진행 중...")
+                        enhanced_result = enhance_with_gemini(vmodel_result, gender)
+                        if enhanced_result:
+                            return enhanced_result
+                        else:
+                            st.warning("⚠️ Gemini 후처리 실패, VModel 결과 반환")
+                            return vmodel_result
+
+                    return vmodel_result
         
         # 에러 처리
         try:
@@ -845,11 +957,11 @@ def create_download_link(image, filename):
 st.markdown("""
 <div class="main-header" style="position: relative;">
     <div style="position: absolute; top: 15px; right: 20px; background: rgba(255,255,255,0.25); padding: 6px 16px; border-radius: 20px; font-size: 0.85em; font-weight: 600; backdrop-filter: blur(10px);">
-        ver.1.1 🌐
+        ver.1.2 🤖
     </div>
     <h1>💇‍♀️ AI 헤어스타일 변경 서비스</h1>
     <p>AI로 원하는 헤어스타일을 미리 체험해보세요!</p>
-    <small>🎯 <strong>고품질 모드</strong> - 선명한 머리카락 디테일 지원 | 🌐 Cloudinary 우선 업로드</small>
+    <small>🎯 <strong>고품질 모드</strong> - 선명한 머리카락 디테일 지원 | 🤖 Gemini 후처리 지원</small>
 </div>
 """, unsafe_allow_html=True)
 
@@ -926,7 +1038,9 @@ with st.sidebar:
     
     st.markdown("### 🔑 API 상태")
     vmodel_status = "✅ 연결됨" if VMODEL_API_KEY else "❌ 미설정"
+    gemini_status = "✅ 연결됨" if GEMINI_API_KEY else "❌ 미설정"
     st.write(f"VModel: {vmodel_status}")
+    st.write(f"Gemini: {gemini_status}")
     st.write(f"이미지 호스팅: 🌐 Cloudinary 우선")
     
     if st.button("🔄 새 세션 시작"):
@@ -1117,16 +1231,54 @@ with tab1:
         if ref_file:
             st.divider()
             st.subheader("3️⃣ 품질 설정")
-            
-            quality_mode = st.radio(
-                "처리 품질 선택",
-                ["high", "standard"],
-                format_func=lambda x: {
-                    "high": "🎨 고품질 (권장) - 선명한 디테일, 30-45초",
-                    "standard": "⚡ 표준 - 빠른 처리, 15-25초"
-                }[x],
-                index=0
+
+            col_q1, col_q2 = st.columns(2)
+
+            with col_q1:
+                quality_mode = st.radio(
+                    "처리 품질 선택",
+                    ["high", "standard"],
+                    format_func=lambda x: {
+                        "high": "🎨 고품질 (권장) - 선명한 디테일, 30-45초",
+                        "standard": "⚡ 표준 - 빠른 처리, 15-25초"
+                    }[x],
+                    index=0
+                )
+
+            with col_q2:
+                gender = st.radio(
+                    "성별 선택",
+                    ["male", "female"],
+                    format_func=lambda x: {
+                        "male": "👨 남성",
+                        "female": "👩 여성"
+                    }[x],
+                    index=0,
+                    help="Gemini 후처리 시 성별에 따라 프롬프트가 최적화됩니다"
+                )
+
+            st.divider()
+            st.subheader("4️⃣ Gemini 후처리 (선택)")
+
+            enable_gemini = st.checkbox(
+                "🤖 Gemini 후처리 활성화",
+                value=True if GEMINI_API_KEY else False,
+                disabled=not GEMINI_API_KEY,
+                help="VModel 결과를 Gemini로 후처리하여 얼굴-헤어 조화를 개선합니다"
             )
+
+            if enable_gemini:
+                st.markdown("""
+                <div class="info-box">
+                    ✨ <strong>Gemini 후처리 활성화됨</strong><br>
+                    • 얼굴-헤어 경계선 자연스럽게 개선<br>
+                    • 조명/색온도 통일<br>
+                    • AI 아티팩트 제거<br>
+                    • 추가 처리시간: +10-20초
+                </div>
+                """, unsafe_allow_html=True)
+            elif not GEMINI_API_KEY:
+                st.warning("⚠️ Gemini API 키가 설정되지 않았습니다. Secrets에 GEMINI_API_KEY를 추가하세요.")
         
         if ref_file:
             st.divider()
@@ -1151,7 +1303,9 @@ with tab1:
                         result_image = process_with_vmodel_api(
                             selected_seed_data['image'],
                             processed_ref_image,
-                            quality_mode=quality_mode
+                            quality_mode=quality_mode,
+                            enable_gemini=enable_gemini,
+                            gender=gender
                         )
                         
                         processing_time = time.time() - start_time
@@ -1166,7 +1320,9 @@ with tab1:
                                 'result_image': result_image,
                                 'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                                 'processing_time': processing_time,
-                                'quality_mode': quality_mode
+                                'quality_mode': quality_mode,
+                                'gemini_enhanced': enable_gemini,
+                                'gender': gender
                             }
                             st.session_state.processing_history.append(history_item)
                             
@@ -1227,15 +1383,21 @@ with tab3:
         for item in history:
             quality_emoji = "🎨" if item.get('quality_mode') == 'high' else "⚡"
             quality_text = "고품질" if item.get('quality_mode') == 'high' else "표준"
-            
-            with st.expander(f"{quality_emoji} {item['created_at']} - {item['seed_filename']} → {item['ref_filename']} ({quality_text})"):
+            gemini_emoji = "🤖" if item.get('gemini_enhanced') else ""
+            gemini_text = "+Gemini" if item.get('gemini_enhanced') else ""
+
+            with st.expander(f"{quality_emoji}{gemini_emoji} {item['created_at']} - {item['seed_filename']} → {item['ref_filename']} ({quality_text}{gemini_text})"):
                 col1, col2 = st.columns([1, 1])
-                
+
                 with col1:
                     st.write(f"**처리 ID**: {item['id']}")
                     st.write(f"**시드 파일**: {item['seed_filename']}")
                     st.write(f"**참조 파일**: {item['ref_filename']}")
                     st.write(f"**품질 모드**: {quality_text}")
+                    st.write(f"**Gemini 후처리**: {'✅ 적용' if item.get('gemini_enhanced') else '❌ 미적용'}")
+                    if item.get('gender'):
+                        gender_text = "남성" if item.get('gender') == 'male' else "여성"
+                        st.write(f"**성별**: {gender_text}")
                     st.write(f"**처리 시간**: {item['processing_time']:.1f}초")
                 
                 with col2:
@@ -1260,8 +1422,8 @@ st.divider()
 st.markdown("""
 <div style="text-align: center; color: #666; padding: 1rem;">
     💇‍♀️ AI Hair Style Transfer | Made with ❤️ using Streamlit Cloud<br>
-    <small>🎨 고품질 모드로 선명한 헤어 디테일을 경험해보세요!</small><br>
-    <small>🌐 <strong>Cloudinary 우선</strong> - VModel 중국 서버 호환 | PostImages / Imgur / ImgBB 대체</small><br>
+    <small>🎨 고품질 모드 + 🤖 <strong>Gemini 후처리</strong>로 자연스러운 헤어 합성!</small><br>
+    <small>🌐 VModel + Gemini 2단계 처리 | Cloudinary 우선 업로드</small><br>
     <small>🔍 <strong>독립 검증 API</strong>: ?api=logs | ?api=performance | ?api=metrics</small><br>
     <small>📊 정확한 성능 측정: 9단계 처리 추적, 완료시 1회만 기록, request_id 추적</small><br>
     <small>세션 종료시 데이터가 삭제됩니다. 중요한 결과는 다운로드하세요!</small>
