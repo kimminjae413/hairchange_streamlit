@@ -921,6 +921,8 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high", enable_g
         # 에러 처리
         try:
             error_data = response.json()
+            error_code = error_data.get('code', response.status_code)
+
             log_vmodel_completion(
                 request_id=request_id,
                 task_id=None,
@@ -928,7 +930,12 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high", enable_g
                 error=str(error_data),
                 first_response_time=first_response_time
             )
-            st.error(f"API 오류: {error_data}")
+
+            # 402 Payment Required - 잔액 부족
+            if error_code == 402 or response.status_code == 402:
+                st.error("💳 VModel 잔액이 부족합니다. 크레딧을 충전해주세요.")
+            else:
+                st.error(f"API 오류: {error_data}")
         except:
             log_vmodel_completion(
                 request_id=request_id,
@@ -937,7 +944,11 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high", enable_g
                 error=f"HTTP {response.status_code}",
                 first_response_time=first_response_time
             )
-            st.error(f"API 호출 실패: HTTP {response.status_code}")
+
+            if response.status_code == 402:
+                st.error("💳 VModel 잔액이 부족합니다. 크레딧을 충전해주세요.")
+            else:
+                st.error(f"API 호출 실패: HTTP {response.status_code}")
         
         return None
         
