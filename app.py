@@ -486,13 +486,19 @@ def enhance_with_gemini(image, gender="male"):
 - Ensure consistent lighting across the entire image
 {gender_prompt}
 
+#4 PRIORITY - PROFESSIONAL STUDIO QUALITY:
+- Reconstruct the image to look like a professional studio portrait shot
+- Apply soft, even studio lighting across the face and hair
+- Enhance skin tone naturally while maintaining authenticity
+- The final result should look like it was taken by a professional photographer in a studio setting
+
 ABSOLUTELY DO NOT CHANGE:
 - The person's face, facial features, expression
 - The hairstyle shape, length, color, volume
 - The background
 - The clothing
 
-OUTPUT: The same photo with improved hair-face integration. The hair must look like it naturally belongs to this person."""
+OUTPUT: The same photo with improved hair-face integration and professional studio quality. The hair must look like it naturally belongs to this person."""
 
         # Gemini 모델 생성 (이미지 생성 지원 모델)
         model = genai.GenerativeModel('gemini-2.0-flash-exp')
