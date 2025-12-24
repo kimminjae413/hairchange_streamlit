@@ -490,6 +490,7 @@ def enhance_with_gemini(image, gender="male"):
 - Reconstruct the image to look like a professional studio portrait shot
 - Apply soft, even studio lighting across the face and hair
 - Enhance skin tone naturally while maintaining authenticity
+- The final result should look like it was taken by a professional photographer in a studio setting
 
 ABSOLUTELY DO NOT CHANGE:
 - The person's face, facial features, expression
