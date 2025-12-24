@@ -8,7 +8,8 @@ import uuid
 import json
 import os
 from datetime import datetime
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 def setup_verification_logging():
     """테스터 독립 검증을 위한 로깅 시스템 초기화"""
@@ -431,13 +432,15 @@ setup_verification_logging()
 VMODEL_API_KEY = st.secrets.get("VMODEL_API_KEY", "")
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 
-# Gemini 설정
+# Gemini 설정 (google-genai SDK 사용)
+# Gemini Client는 enhance_with_gemini 함수 내에서 생성
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+    pass  # Client는 함수 내에서 생성
 
 def enhance_with_gemini(image, gender="male"):
     """
     Gemini로 헤어 이미지 후처리 (얼굴-헤어 조화 개선)
+    google-genai SDK + gemini-3-pro-image-preview 모델 사용
 
     Args:
         image: PIL Image 객체
@@ -453,17 +456,14 @@ def enhance_with_gemini(image, gender="male"):
     try:
         st.info("🤖 Gemini 후처리 시작...")
 
-        # 이미지를 바이트로 변환
-        buffer = io.BytesIO()
-        image.save(buffer, format='JPEG', quality=90)
-        image_bytes = buffer.getvalue()
+        # Gemini Client 생성
+        client = genai.Client(api_key=GEMINI_API_KEY)
 
         # 성별에 따른 프롬프트 조정
         if gender == "female":
-            gender_prompt = """- For long hair: ensure hair ends are sharp and clear, not blurry or smudged
-- Each strand should be distinct, especially at the tips"""
+            gender_prompt = "For long hair: ensure hair ends are sharp and clear, each strand distinct at the tips."
         else:
-            gender_prompt = """- For short hair: ensure clean edges around the hairline and sideburns"""
+            gender_prompt = "For short hair: ensure clean edges around the hairline and sideburns."
 
         # 후처리 프롬프트
         prompt = f"""You are a photo retouching expert. Your task is to make this hair swap photo look natural.
@@ -484,13 +484,12 @@ def enhance_with_gemini(image, gender="male"):
 - Hair texture should look like real human hair
 - Remove any artificial/AI-generated artifacts
 - Ensure consistent lighting across the entire image
-{gender_prompt}
+- {gender_prompt}
 
 #4 PRIORITY - PROFESSIONAL STUDIO QUALITY:
 - Reconstruct the image to look like a professional studio portrait shot
 - Apply soft, even studio lighting across the face and hair
 - Enhance skin tone naturally while maintaining authenticity
-- The final result should look like it was taken by a professional photographer in a studio setting
 
 ABSOLUTELY DO NOT CHANGE:
 - The person's face, facial features, expression
@@ -498,31 +497,23 @@ ABSOLUTELY DO NOT CHANGE:
 - The background
 - The clothing
 
-OUTPUT: The same photo with improved hair-face integration and professional studio quality. The hair must look like it naturally belongs to this person."""
+OUTPUT: The same photo with improved hair-face integration and professional studio quality."""
 
-        # Gemini 모델 생성 (이미지 생성 지원 모델)
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
-
-        # 이미지 파트 생성
-        image_part = {
-            "mime_type": "image/jpeg",
-            "data": image_bytes
-        }
-
-        # Gemini API 호출
-        response = model.generate_content(
-            [image_part, prompt],
-            generation_config={
-                "temperature": 0.4
-            }
+        # Gemini API 호출 (gemini-3-pro-image-preview 모델)
+        response = client.models.generate_content(
+            model="gemini-3-pro-image-preview",
+            contents=[prompt, image],
+            config=types.GenerateContentConfig(
+                response_modalities=['IMAGE', 'TEXT']
+            )
         )
 
         # 응답에서 이미지 추출
-        if response.candidates:
+        if response.candidates and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:
-                if hasattr(part, 'inline_data') and part.inline_data:
-                    # Base64 이미지 디코딩
-                    image_data = base64.b64decode(part.inline_data.data)
+                if hasattr(part, 'inline_data') and part.inline_data is not None:
+                    # 이미지 데이터 추출
+                    image_data = part.inline_data.data
                     enhanced_image = Image.open(io.BytesIO(image_data))
                     st.success("✅ Gemini 후처리 완료!")
                     return enhanced_image
