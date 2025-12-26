@@ -1258,7 +1258,7 @@ with st.sidebar:
     """)
 
 # 메인 탭
-tab1, tab2, tab3, tab4 = st.tabs(["🎨 헤어 변경", "📸 시드 관리", "🔄 360° 뷰 생성", "📝 처리 기록"])
+tab2, tab1, tab3, tab4 = st.tabs(["📸 시드 관리", "🎨 헤어 변경", "🔄 360° 뷰 생성", "📝 처리 기록"])
 
 with tab2:
     st.header("📸 시드 이미지 관리")
