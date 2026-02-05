@@ -538,6 +538,272 @@ OUTPUT: Single high-quality image showing the {view_descriptions[view_key]} of t
             return None, f"360° 뷰 생성 실패: {error_msg}"
 
 
+# ============== 배치 변환 (길이/각도) 함수들 ==============
+
+# 길이 카테고리 정의
+LENGTH_CATEGORIES = {
+    'A': {'name': '버즈컷/픽시컷', 'description': 'Very short - buzz cut or pixie cut level', 'cm': '1-5cm'},
+    'B': {'name': '숏컷', 'description': 'Short - ear length or above', 'cm': '5-10cm'},
+    'C': {'name': '미디엄 숏', 'description': 'Medium short - chin length', 'cm': '10-20cm'},
+    'D': {'name': '미디엄', 'description': 'Medium - shoulder length', 'cm': '20-30cm'},
+    'E': {'name': '미디엄 롱', 'description': 'Medium long - below shoulder', 'cm': '30-40cm'},
+    'F': {'name': '롱', 'description': 'Long - mid-back length', 'cm': '40-50cm'},
+    'G': {'name': '슈퍼롱', 'description': 'Very long - waist length or longer', 'cm': '50cm+'},
+    'H': {'name': '뉘앙스 변형', 'description': 'Same length with subtle styling variations', 'cm': 'same'}
+}
+
+# 각도 옵션 정의
+ANGLE_OPTIONS = {
+    '0': {'name': '정면', 'description': 'Front view - looking directly at camera'},
+    '22.5': {'name': '좌측 22.5°', 'description': 'Slight left turn - 22.5 degrees'},
+    '45': {'name': '좌측 45°', 'description': 'Quarter left turn - 45 degrees'},
+    '67.5': {'name': '좌측 67.5°', 'description': 'Three-quarter left turn - 67.5 degrees'},
+    '90': {'name': '좌측 90°', 'description': 'Left profile - 90 degrees (side view)'}
+}
+
+
+def generate_length_variation(image, source_length, target_length, gender="neutral"):
+    """
+    Gemini로 헤어 길이 변환 이미지 생성
+
+    Args:
+        image: PIL Image 객체 (원본 이미지)
+        source_length: 원본 길이 카테고리 ('A'-'H')
+        target_length: 목표 길이 카테고리 ('A'-'H')
+        gender: 성별 ('male', 'female', 'neutral')
+
+    Returns:
+        PIL Image 또는 None, 에러 메시지
+    """
+    if not GEMINI_API_KEY:
+        return None, "Gemini API 키가 설정되지 않았습니다."
+
+    if source_length == target_length and target_length != 'H':
+        return image, None  # 같은 길이면 원본 반환
+
+    source_info = LENGTH_CATEGORIES.get(source_length, LENGTH_CATEGORIES['D'])
+    target_info = LENGTH_CATEGORIES.get(target_length, LENGTH_CATEGORIES['D'])
+
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+
+        if target_length == 'H':
+            # 뉘앙스 변형 - 같은 길이, 다른 스타일링
+            prompt = f"""[HAIR STYLING VARIATION TASK]
+
+You are given an image of a person with a specific hairstyle.
+Create a SUBTLE VARIATION of the same hairstyle with different styling nuances.
+
+⚠️ ABSOLUTE RULES:
+1. FACE: Keep the EXACT same face - same eyes, nose, lips, skin tone, facial structure. NO changes.
+2. HAIR LENGTH: Keep the EXACT same length ({source_info['cm']}).
+3. HAIR COLOR: Keep the EXACT same color.
+4. CLOTHES & BACKGROUND: Keep exactly the same.
+
+🎨 STYLING VARIATIONS TO APPLY (choose 1-2):
+- Slightly different parting direction
+- Slightly more/less volume
+- Subtle wave or straightening difference
+- Different texture (slightly more matte or shiny)
+- Subtle layering visibility difference
+
+The change should be noticeable but subtle - like the same person styled their hair slightly differently today.
+
+OUTPUT: Single high-quality image with the subtle styling variation."""
+        else:
+            # 길이 변환
+            prompt = f"""[HAIR LENGTH TRANSFORMATION TASK]
+
+Transform the hairstyle in this image from {source_info['name']} ({source_info['cm']}) to {target_info['name']} ({target_info['cm']}).
+
+⚠️ ABSOLUTE RULES - DO NOT VIOLATE:
+1. FACE: Keep the EXACT same face. Same eyes, nose, lips, skin tone, facial structure, makeup. NO changes whatsoever.
+2. HAIR COLOR: Keep the EXACT same hair color and tone.
+3. HAIR TEXTURE: Keep similar hair texture (straight/wavy/curly).
+4. CLOTHES: Keep the EXACT same clothing.
+5. BACKGROUND: Keep a clean, neutral studio background.
+6. LIGHTING: Keep consistent professional studio lighting.
+
+📏 LENGTH TRANSFORMATION:
+- FROM: {source_info['description']} ({source_info['cm']})
+- TO: {target_info['description']} ({target_info['cm']})
+
+🎯 IMPORTANT GUIDELINES:
+- The hairstyle should look natural and professionally done
+- Maintain the overall style aesthetic (if modern, keep modern; if classic, keep classic)
+- Hair should frame the face appropriately for the new length
+- {"For male: maintain masculine styling appropriate for the length" if gender == "male" else "For female: maintain feminine styling appropriate for the length" if gender == "female" else "Maintain gender-neutral professional styling"}
+
+OUTPUT: Single high-quality image showing the same person with hair length changed to {target_info['name']}."""
+
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-exp",
+            contents=[prompt, image],
+            config=types.GenerateContentConfig(
+                response_modalities=['IMAGE', 'TEXT']
+            )
+        )
+
+        if response.candidates and response.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'inline_data') and part.inline_data is not None:
+                    image_data = part.inline_data.data
+                    generated_image = Image.open(io.BytesIO(image_data))
+                    return generated_image, None
+
+        return None, "Gemini 응답에 이미지가 없습니다."
+
+    except Exception as e:
+        error_msg = str(e)
+        if "SAFETY" in error_msg.upper() or "BLOCKED" in error_msg.upper():
+            return None, "안전 필터에 의해 차단됨"
+        elif "QUOTA" in error_msg.upper() or "RATE" in error_msg.upper():
+            return None, "API 할당량 초과"
+        else:
+            return None, f"길이 변환 실패: {error_msg}"
+
+
+def generate_angle_variation(image, target_angle, gender="neutral"):
+    """
+    Gemini로 헤어 각도 변환 이미지 생성 (세밀한 각도 지원)
+
+    Args:
+        image: PIL Image 객체 (원본 이미지, 정면으로 가정)
+        target_angle: 목표 각도 (0, 22.5, 45, 67.5, 90)
+        gender: 성별 ('male', 'female', 'neutral')
+
+    Returns:
+        PIL Image 또는 None, 에러 메시지
+    """
+    if not GEMINI_API_KEY:
+        return None, "Gemini API 키가 설정되지 않았습니다."
+
+    target_angle = float(target_angle)
+
+    if target_angle == 0:
+        return image, None  # 정면이면 원본 반환
+
+    angle_key = str(target_angle) if target_angle in [22.5, 67.5] else str(int(target_angle))
+    angle_info = ANGLE_OPTIONS.get(angle_key, ANGLE_OPTIONS['45'])
+
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+
+        prompt = f"""[CAMERA ANGLE ROTATION TASK]
+
+The source image shows a person from the FRONT VIEW (0°).
+Rotate the camera {target_angle}° to the LEFT to show the person from {angle_info['name']} view.
+
+⚠️ ABSOLUTE RULES - DO NOT VIOLATE:
+1. FACE: Keep the EXACT same face. Same eyes, nose, lips, skin tone, facial structure. NO changes.
+2. HAIR: Keep the EXACT same hairstyle. Same cut, length, color, texture, styling, volume. NO changes.
+3. CLOTHES: Keep the EXACT same clothing. Same color, pattern, style. NO changes.
+4. BACKGROUND: Keep a clean, neutral studio background.
+5. LIGHTING: Keep consistent professional studio lighting from similar direction.
+
+📐 CAMERA ROTATION DETAILS:
+- Target angle: {target_angle}° to the left
+- View name: {angle_info['name']}
+- Description: {angle_info['description']}
+
+🎯 ANGLE-SPECIFIC GUIDANCE:
+{"- Slight turn: Face mostly visible, slight angle to the left" if target_angle == 22.5 else ""}
+{"- Quarter turn: Face at 45° angle, both eyes may still be visible" if target_angle == 45 else ""}
+{"- Three-quarter turn: Face mostly turned, showing more of the side profile" if target_angle == 67.5 else ""}
+{"- Full profile: Complete side view, showing left ear, one eye visible" if target_angle == 90 else ""}
+
+This is NOT creative generation. This is a STRICT camera rotation task.
+The output must look like a photo of the SAME person taken from {target_angle}° left angle.
+
+OUTPUT: Single high-quality image showing the {angle_info['name']} view of this exact person."""
+
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-exp",
+            contents=[prompt, image],
+            config=types.GenerateContentConfig(
+                response_modalities=['IMAGE', 'TEXT']
+            )
+        )
+
+        if response.candidates and response.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'inline_data') and part.inline_data is not None:
+                    image_data = part.inline_data.data
+                    generated_image = Image.open(io.BytesIO(image_data))
+                    return generated_image, None
+
+        return None, "Gemini 응답에 이미지가 없습니다."
+
+    except Exception as e:
+        error_msg = str(e)
+        if "SAFETY" in error_msg.upper() or "BLOCKED" in error_msg.upper():
+            return None, "안전 필터에 의해 차단됨"
+        elif "QUOTA" in error_msg.upper() or "RATE" in error_msg.upper():
+            return None, "API 할당량 초과"
+        else:
+            return None, f"각도 변환 실패: {error_msg}"
+
+
+def generate_batch_variations(image, source_length, target_lengths, target_angles, gender="neutral", progress_callback=None):
+    """
+    배치로 길이/각도 변환 이미지 생성
+
+    Args:
+        image: PIL Image 객체 (원본 이미지)
+        source_length: 원본 길이 카테고리 ('A'-'H')
+        target_lengths: 목표 길이 리스트 ['A', 'B', ...]
+        target_angles: 목표 각도 리스트 [0, 22.5, 45, ...]
+        gender: 성별
+        progress_callback: 진행 상황 콜백 함수(current, total, message)
+
+    Returns:
+        dict: {(length, angle): image} 결과 딕셔너리
+        dict: {(length, angle): error} 에러 딕셔너리
+    """
+    results = {}
+    errors = {}
+
+    # 전체 작업 수 계산
+    total_tasks = len(target_lengths) * len(target_angles)
+    current_task = 0
+
+    for length in target_lengths:
+        # 먼저 해당 길이로 변환
+        if progress_callback:
+            progress_callback(current_task, total_tasks, f"길이 변환 중: {LENGTH_CATEGORIES[length]['name']}")
+
+        length_image, length_error = generate_length_variation(image, source_length, length, gender)
+
+        if length_error and length != source_length:
+            # 길이 변환 실패 시 해당 길이의 모든 각도에 에러 기록
+            for angle in target_angles:
+                errors[(length, angle)] = length_error
+                current_task += 1
+            continue
+
+        # 길이 변환 성공 (또는 같은 길이) - 각 각도로 변환
+        base_image = length_image if length_image else image
+
+        for angle in target_angles:
+            current_task += 1
+
+            if progress_callback:
+                angle_name = ANGLE_OPTIONS.get(str(angle), ANGLE_OPTIONS.get(str(int(angle)) if angle == int(angle) else '45', {})).get('name', f'{angle}°')
+                progress_callback(current_task, total_tasks, f"{LENGTH_CATEGORIES[length]['name']} + {angle_name}")
+
+            angle_image, angle_error = generate_angle_variation(base_image, angle, gender)
+
+            if angle_error:
+                errors[(length, str(angle))] = angle_error
+            else:
+                results[(length, str(angle))] = angle_image
+
+            # API 요청 간 약간의 딜레이 (rate limiting 방지)
+            time.sleep(0.5)
+
+    return results, errors
+
+
 def generate_all_360_views(source_image, source_angle=0, progress_callback=None):
     """
     모든 360° 뷰 이미지 생성 (4개)
@@ -1278,7 +1544,7 @@ with st.sidebar:
     """)
 
 # 메인 탭
-tab2, tab1, tab3, tab4 = st.tabs(["📸 시드 관리", "🎨 헤어 변경", "🔄 360° 뷰 생성", "📝 처리 기록"])
+tab2, tab1, tab5, tab3, tab4 = st.tabs(["📸 시드 관리", "🎨 헤어 변경", "🔄 배치 변환", "🔄 360° 뷰 생성", "📝 처리 기록"])
 
 with tab2:
     st.header("📸 시드 이미지 관리")
@@ -1733,6 +1999,273 @@ with tab3:
             with st.expander("❌ 에러 상세 정보"):
                 for view_key, error_msg in failed_views.items():
                     st.error(f"**{view_names.get(view_key, view_key)}**: {error_msg}")
+
+# ============== 배치 변환 탭 ==============
+with tab5:
+    st.header("🔄 배치 변환 (길이 × 각도)")
+    st.markdown("""
+    <div class="info-box">
+        💡 <strong>배치 변환이란?</strong><br>
+        하나의 헤어스타일 이미지를 다양한 <strong>길이</strong>와 <strong>각도</strong> 조합으로 자동 변환합니다.<br>
+        예: 미디엄 정면 → 숏컷 45°, 롱헤어 90° 등 한 번에 여러 변형 생성!
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 세션 상태 초기화
+    if 'batch_results' not in st.session_state:
+        st.session_state.batch_results = None
+    if 'batch_errors' not in st.session_state:
+        st.session_state.batch_errors = None
+    if 'batch_source_image' not in st.session_state:
+        st.session_state.batch_source_image = None
+
+    # API 키 체크
+    if not GEMINI_API_KEY:
+        st.error("⚠️ Gemini API 키가 설정되지 않았습니다. Secrets에 GEMINI_API_KEY를 추가하세요.")
+    else:
+        col_left, col_right = st.columns([1, 2])
+
+        with col_left:
+            st.subheader("1️⃣ 원본 이미지")
+
+            # 이미지 소스 선택
+            image_source = st.radio(
+                "이미지 소스",
+                ["새 이미지 업로드", "저장된 시드에서 선택", "헤어 변경 결과 사용"],
+                horizontal=False
+            )
+
+            batch_source_image = None
+
+            if image_source == "새 이미지 업로드":
+                batch_file = st.file_uploader(
+                    "원본 헤어스타일 이미지",
+                    type=['png', 'jpg', 'jpeg'],
+                    key="batch_uploader"
+                )
+                if batch_file:
+                    batch_source_image = Image.open(batch_file)
+                    st.image(batch_source_image, caption="업로드된 이미지", width=250)
+
+            elif image_source == "저장된 시드에서 선택":
+                if st.session_state.seed_images:
+                    seed_options = {f"{sid}: {data['filename']}": sid
+                                  for sid, data in st.session_state.seed_images.items()}
+                    selected_seed = st.selectbox("시드 선택", list(seed_options.keys()))
+                    if selected_seed:
+                        seed_id = seed_options[selected_seed]
+                        batch_source_image = st.session_state.seed_images[seed_id]['image']
+                        st.image(batch_source_image, caption="선택된 시드", width=250)
+                else:
+                    st.warning("저장된 시드가 없습니다. '시드 관리' 탭에서 먼저 추가하세요.")
+
+            elif image_source == "헤어 변경 결과 사용":
+                if st.session_state.processing_history:
+                    history_options = {f"{item['created_at']} - {item['ref_filename']}": idx
+                                      for idx, item in enumerate(st.session_state.processing_history)}
+                    selected_history = st.selectbox("결과 선택", list(history_options.keys()))
+                    if selected_history:
+                        idx = history_options[selected_history]
+                        batch_source_image = st.session_state.processing_history[idx]['result_image']
+                        st.image(batch_source_image, caption="선택된 결과", width=250)
+                else:
+                    st.warning("처리 기록이 없습니다. '헤어 변경' 탭에서 먼저 변환하세요.")
+
+            # 원본 길이 선택
+            st.subheader("2️⃣ 원본 길이 지정")
+            source_length = st.selectbox(
+                "현재 헤어 길이",
+                list(LENGTH_CATEGORIES.keys()),
+                format_func=lambda x: f"{x}: {LENGTH_CATEGORIES[x]['name']} ({LENGTH_CATEGORIES[x]['cm']})",
+                index=3  # D (미디엄) 기본
+            )
+
+            # 성별 선택
+            st.subheader("3️⃣ 성별")
+            batch_gender = st.radio("성별", ["male", "female", "neutral"], horizontal=True, index=2)
+
+        with col_right:
+            st.subheader("4️⃣ 변환 옵션 선택")
+
+            col_len, col_ang = st.columns(2)
+
+            with col_len:
+                st.markdown("**📏 길이 변환**")
+
+                # 프리셋 버튼
+                preset_col1, preset_col2 = st.columns(2)
+                with preset_col1:
+                    if st.button("전체 선택", key="len_all"):
+                        st.session_state.len_select_all = True
+                with preset_col2:
+                    if st.button("전체 해제", key="len_none"):
+                        st.session_state.len_select_all = False
+
+                # 길이 체크박스
+                selected_lengths = []
+                for key, info in LENGTH_CATEGORIES.items():
+                    default_val = getattr(st.session_state, 'len_select_all', False) or key == source_length
+                    if st.checkbox(
+                        f"{key}: {info['name']} ({info['cm']})",
+                        value=default_val,
+                        key=f"len_{key}"
+                    ):
+                        selected_lengths.append(key)
+
+            with col_ang:
+                st.markdown("**📐 각도 변환**")
+
+                # 프리셋 버튼
+                preset_col1, preset_col2 = st.columns(2)
+                with preset_col1:
+                    if st.button("전체 선택", key="ang_all"):
+                        st.session_state.ang_select_all = True
+                with preset_col2:
+                    if st.button("전체 해제", key="ang_none"):
+                        st.session_state.ang_select_all = False
+
+                # 각도 체크박스
+                selected_angles = []
+                for key, info in ANGLE_OPTIONS.items():
+                    default_val = getattr(st.session_state, 'ang_select_all', False) or key == '0'
+                    if st.checkbox(
+                        f"{info['name']} ({key}°)",
+                        value=default_val,
+                        key=f"ang_{key}"
+                    ):
+                        selected_angles.append(float(key))
+
+            # 예상 생성 개수 표시
+            total_variations = len(selected_lengths) * len(selected_angles)
+            st.divider()
+
+            if total_variations > 0:
+                st.info(f"""
+                📊 **예상 결과**: {len(selected_lengths)}개 길이 × {len(selected_angles)}개 각도 = **{total_variations}장**
+                ⏱️ **예상 시간**: 약 {total_variations * 15}~{total_variations * 30}초
+                💰 **API 사용**: Gemini API {total_variations}회 호출
+                """)
+            else:
+                st.warning("길이와 각도를 각각 1개 이상 선택하세요.")
+
+            # 생성 버튼
+            generate_disabled = not batch_source_image or total_variations == 0
+            if st.button("🚀 배치 변환 시작", type="primary", disabled=generate_disabled, use_container_width=True):
+                st.session_state.batch_source_image = batch_source_image
+
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+
+                def update_progress(current, total, message):
+                    progress = current / total
+                    progress_bar.progress(progress)
+                    status_text.text(f"[{current}/{total}] {message}")
+
+                with st.spinner("배치 변환 진행 중..."):
+                    start_time = time.time()
+
+                    results, errors = generate_batch_variations(
+                        batch_source_image,
+                        source_length,
+                        selected_lengths,
+                        selected_angles,
+                        batch_gender,
+                        update_progress
+                    )
+
+                    processing_time = time.time() - start_time
+
+                    st.session_state.batch_results = results
+                    st.session_state.batch_errors = errors
+
+                progress_bar.progress(1.0)
+                status_text.text(f"완료! ({processing_time:.1f}초)")
+
+                success_count = len(results)
+                error_count = len(errors)
+
+                if success_count > 0:
+                    st.success(f"✅ {success_count}장 생성 완료! (실패: {error_count}장)")
+                else:
+                    st.error(f"❌ 모든 변환 실패 ({error_count}장)")
+
+    # 결과 표시
+    if st.session_state.batch_results:
+        st.divider()
+        st.subheader("🎨 변환 결과")
+
+        results = st.session_state.batch_results
+        errors = st.session_state.batch_errors or {}
+
+        # 원본 이미지 표시
+        if st.session_state.batch_source_image:
+            st.markdown("**📷 원본 이미지**")
+            st.image(st.session_state.batch_source_image, width=200)
+
+        st.markdown("**📊 변환 결과 그리드**")
+
+        # 결과를 길이별로 그룹화하여 표시
+        lengths_in_results = sorted(set(k[0] for k in results.keys()))
+        angles_in_results = sorted(set(float(k[1]) for k in results.keys()))
+
+        # 헤더 행 (각도)
+        header_cols = st.columns([1] + [1] * len(angles_in_results))
+        header_cols[0].markdown("**길이 \\ 각도**")
+        for i, angle in enumerate(angles_in_results):
+            angle_key = str(angle) if angle in [22.5, 67.5] else str(int(angle))
+            angle_name = ANGLE_OPTIONS.get(angle_key, {}).get('name', f'{angle}°')
+            header_cols[i + 1].markdown(f"**{angle_name}**")
+
+        # 데이터 행 (길이별)
+        for length in lengths_in_results:
+            row_cols = st.columns([1] + [1] * len(angles_in_results))
+            row_cols[0].markdown(f"**{length}: {LENGTH_CATEGORIES[length]['name']}**")
+
+            for i, angle in enumerate(angles_in_results):
+                angle_key = str(angle) if angle in [22.5, 67.5] else str(int(angle))
+                key = (length, angle_key)
+
+                if key in results and results[key]:
+                    row_cols[i + 1].image(results[key], use_container_width=True)
+                elif key in errors:
+                    row_cols[i + 1].error(f"❌ {errors[key][:20]}...")
+                else:
+                    row_cols[i + 1].info("—")
+
+        # 일괄 다운로드
+        st.divider()
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if results:
+                # ZIP 파일 생성
+                zip_buffer = io.BytesIO()
+                import zipfile
+                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    for (length, angle), img in results.items():
+                        if img:
+                            img_buffer = io.BytesIO()
+                            img.save(img_buffer, format='PNG', quality=95)
+                            img_buffer.seek(0)
+                            filename = f"hair_{length}_{angle}deg.png"
+                            zip_file.writestr(filename, img_buffer.getvalue())
+
+                zip_buffer.seek(0)
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+                st.download_button(
+                    "📦 전체 다운로드 (ZIP)",
+                    zip_buffer.getvalue(),
+                    f"batch_variations_{timestamp}.zip",
+                    "application/zip",
+                    use_container_width=True,
+                    type="primary"
+                )
+
+        # 에러 상세 표시
+        if errors:
+            with st.expander(f"❌ 에러 상세 정보 ({len(errors)}건)"):
+                for (length, angle), error_msg in errors.items():
+                    st.error(f"**{LENGTH_CATEGORIES[length]['name']} + {angle}°**: {error_msg}")
 
 with tab4:
     st.header("📝 처리 기록")
