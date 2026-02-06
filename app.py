@@ -456,106 +456,6 @@ GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 if GEMINI_API_KEY:
     pass  # Client는 함수 내에서 생성
 
-def generate_360_view(image, view_key, target_angle, source_angle=0):
-    """
-    Gemini로 360° 뷰 이미지 생성
-
-    Args:
-        image: PIL Image 객체 (원본 이미지)
-        view_key: 뷰 키 ('front', 'right', 'back', 'left')
-        target_angle: 생성할 각도 (0, 90, 180, 270)
-        source_angle: 원본 이미지 각도 (0, 90, 180, 270)
-
-    Returns:
-        PIL Image 또는 None, 에러 메시지
-    """
-    if not GEMINI_API_KEY:
-        return None, "Gemini API 키가 설정되지 않았습니다."
-
-    view_descriptions = {
-        'front': 'front view (0°) - looking directly at camera',
-        'right': 'right side profile (90°) - showing right side of face and hair',
-        'back': 'back view (180°) - showing back of head and hair from behind',
-        'left': 'left side profile (270°) - showing left side of face and hair'
-    }
-
-    source_descriptions = {
-        0: 'front view (0°)',
-        90: 'right side profile (90°)',
-        180: 'back view (180°)',
-        270: 'left side profile (270°)'
-    }
-
-    # 회전 각도 계산 (시계 방향 양수)
-    rotation_delta = (target_angle - source_angle) % 360
-
-    try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-
-        prompt = f"""[STRICT IMAGE TRANSFORMATION TASK - CAMERA ROTATION ONLY]
-
-The source image shows a person from {source_descriptions[source_angle]}.
-You need to rotate the camera {rotation_delta}° clockwise to generate a {view_descriptions[view_key]}.
-
-⚠️ ABSOLUTE RULES - DO NOT VIOLATE:
-1. FACE: Keep the EXACT same face. Same eyes, nose, lips, skin tone, facial structure. NO changes.
-2. HAIR: Keep the EXACT same hairstyle. Same cut, length, color, texture, styling, volume. NO changes.
-3. CLOTHES: Keep the EXACT same clothing. Same color, pattern, style. NO changes.
-4. BACKGROUND: Keep a clean, neutral studio background similar to original.
-5. LIGHTING: Keep consistent professional studio lighting.
-
-📐 CAMERA ROTATION: From {source_angle}° to {target_angle}° (rotate {rotation_delta}° clockwise)
-
-This is NOT creative generation. This is a STRICT camera rotation task.
-The output must look like a photo of the SAME person taken from angle {target_angle}°.
-
-For {view_key} view ({target_angle}°):
-- Camera position: {'directly in front' if view_key == 'front' else 'to the right side' if view_key == 'right' else 'directly behind' if view_key == 'back' else 'to the left side'}
-- Face visibility: {'full face visible' if view_key == 'front' else 'right side profile visible' if view_key == 'right' else 'back of head, no face visible' if view_key == 'back' else 'left side profile visible'}
-
-OUTPUT: Single high-quality image showing the {view_descriptions[view_key]} of this exact person with exact same hairstyle."""
-
-        response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
-            contents=[prompt, image],
-            config=types.GenerateContentConfig(
-                response_modalities=['IMAGE', 'TEXT']
-            )
-        )
-
-        # 응답에서 이미지 추출
-        if response.candidates and response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
-                if hasattr(part, 'inline_data') and part.inline_data is not None:
-                    image_data = part.inline_data.data
-                    generated_image = Image.open(io.BytesIO(image_data))
-                    return generated_image, None
-
-        # 텍스트 응답 확인 (에러 메시지일 수 있음)
-        text_response = ""
-        for part in response.candidates[0].content.parts:
-            if hasattr(part, 'text') and part.text:
-                text_response += part.text
-
-        if text_response:
-            return None, f"Gemini가 이미지 대신 텍스트를 반환했습니다: {text_response[:200]}"
-
-        return None, "Gemini 응답에 이미지가 없습니다."
-
-    except Exception as e:
-        error_msg = str(e)
-        # 상세 에러 분석
-        if "SAFETY" in error_msg.upper() or "BLOCKED" in error_msg.upper():
-            return None, f"안전 필터에 의해 차단됨: 이미지가 콘텐츠 정책을 위반할 수 있습니다."
-        elif "QUOTA" in error_msg.upper() or "RATE" in error_msg.upper():
-            return None, f"API 할당량 초과: 잠시 후 다시 시도해주세요."
-        elif "INVALID" in error_msg.upper():
-            return None, f"잘못된 요청: 이미지 형식이나 크기를 확인해주세요."
-        elif "PERMISSION" in error_msg.upper() or "AUTH" in error_msg.upper():
-            return None, f"인증 오류: API 키를 확인해주세요."
-        else:
-            return None, f"360° 뷰 생성 실패: {error_msg}"
-
 
 # ============== 배치 변환 (길이/각도) 함수들 ==============
 
@@ -1088,56 +988,6 @@ def generate_batch_variations(image, source_length, target_lengths, target_angle
 
             # API 요청 간 약간의 딜레이 (rate limiting 방지)
             time.sleep(0.5)
-
-    return results, errors
-
-
-def generate_all_360_views(source_image, source_angle=0, progress_callback=None):
-    """
-    모든 360° 뷰 이미지 생성 (4개)
-
-    Args:
-        source_image: PIL Image 객체 (원본 이미지)
-        source_angle: 원본 이미지의 각도 (0, 90, 180, 270)
-        progress_callback: 진행 상황 콜백 함수
-
-    Returns:
-        dict: {'front': image, 'right': image, 'back': image, 'left': image}
-        dict: {'front': error, ...} 에러 딕셔너리
-    """
-    views = {
-        'front': 0,
-        'right': 90,
-        'back': 180,
-        'left': 270
-    }
-
-    # 원본 이미지 각도에 해당하는 view_key 찾기
-    source_view_key = None
-    for key, angle in views.items():
-        if angle == source_angle:
-            source_view_key = key
-            break
-
-    results = {}
-    errors = {}
-
-    for i, (view_key, target_angle) in enumerate(views.items()):
-        if progress_callback:
-            progress_callback(i, 4, f"{view_key} ({target_angle}°) 생성 중...")
-
-        if view_key == source_view_key:
-            # 원본 이미지와 같은 각도는 원본 사용
-            results[view_key] = source_image
-            errors[view_key] = None
-        else:
-            # 나머지 뷰는 Gemini로 생성 (source_angle 전달)
-            generated, error = generate_360_view(source_image, view_key, target_angle, source_angle)
-            results[view_key] = generated
-            errors[view_key] = error
-
-    if progress_callback:
-        progress_callback(4, 4, "완료!")
 
     return results, errors
 
@@ -1706,7 +1556,7 @@ st.markdown("""
     <div class="version-badge">ver.1.3 🔄</div>
     <h1>💇‍♀️ AI 헤어스타일 변경 서비스</h1>
     <p>AI로 원하는 헤어스타일을 미리 체험해보세요!</p>
-    <small>🎯 <strong>고품질 모드</strong> - 선명한 머리카락 디테일 지원 | 🤖 Gemini 후처리 | 🔄 <strong>360° 뷰 생성</strong> NEW!</small>
+    <small>🎯 <strong>고품질 모드</strong> - 선명한 머리카락 디테일 지원 | 🤖 Gemini 후처리 | 🔄 <strong>배치 변환</strong></small>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1863,7 +1713,7 @@ with st.sidebar:
     """)
 
 # 메인 탭
-tab2, tab1, tab5, tab3, tab4 = st.tabs(["📸 시드 관리", "🎨 헤어 변경", "🔄 배치 변환", "🔄 360° 뷰 생성", "📝 처리 기록"])
+tab2, tab1, tab5, tab4 = st.tabs(["📸 시드 관리", "🎨 헤어 변경", "🔄 배치 변환", "📝 처리 기록"])
 
 with tab2:
     st.header("📸 시드 이미지 관리")
@@ -2098,11 +1948,6 @@ with tab1:
                                     help="최고 품질의 PNG 파일로 다운로드됩니다"
                                 )
 
-                                # 360° 뷰 생성으로 이동 버튼
-                                if st.button("🔄 360° 뷰 생성으로 이동", use_container_width=True, type="secondary"):
-                                    st.session_state.image_for_360 = result_image
-                                    st.success("✅ 이미지가 360° 뷰 탭으로 전달되었습니다. '🔄 360° 뷰 생성' 탭으로 이동하세요!")
-
                             quality_desc = "고품질" if quality_mode == "high" else "표준"
                             st.info(f"""
                             **처리 정보**
@@ -2115,209 +1960,6 @@ with tab1:
                             
                         else:
                             st.error("헤어 변경에 실패했습니다. 다시 시도해주세요.")
-
-with tab3:
-    st.header("🔄 360° 뷰 이미지 생성")
-    st.markdown("""
-    <div class="info-box">
-        💡 <strong>360° 뷰 생성이란?</strong><br>
-        대표 이미지(어떤 각도든)를 기반으로 4방향(정면, 오른쪽, 뒤, 왼쪽) 뷰 이미지를 AI로 생성합니다.<br>
-        헤어스타일의 포인트가 가장 잘 보이는 각도의 이미지를 사용하세요!
-    </div>
-    """, unsafe_allow_html=True)
-
-    # 360° 뷰 세션 상태 초기화
-    if 'views_360_results' not in st.session_state:
-        st.session_state.views_360_results = None
-    if 'views_360_errors' not in st.session_state:
-        st.session_state.views_360_errors = None
-    if 'image_for_360' not in st.session_state:
-        st.session_state.image_for_360 = None
-
-    col1, col2 = st.columns([1, 1])
-
-    with col1:
-        st.subheader("1️⃣ 대표 이미지")
-
-        # 헤어 변경에서 전달된 이미지 확인
-        transferred_image = st.session_state.image_for_360
-        processed_image = None
-        source_angle = 0
-
-        if transferred_image:
-            st.success("✅ 헤어 변경 결과 이미지가 전달되었습니다!")
-            is_valid, message, processed_image = validate_image(transferred_image)
-            if is_valid:
-                st.image(processed_image, caption="전달된 이미지", width=300)
-                # 전달된 이미지 초기화 버튼
-                if st.button("🗑️ 다른 이미지 사용", use_container_width=True):
-                    st.session_state.image_for_360 = None
-                    st.rerun()
-            else:
-                st.error(message)
-                processed_image = None
-        else:
-            # 직접 업로드
-            source_file = st.file_uploader(
-                "대표 이미지 선택",
-                type=['png', 'jpg', 'jpeg'],
-                help="헤어스타일 포인트가 가장 잘 보이는 사진을 업로드하세요 (어떤 각도든 OK)",
-                key="source_360_uploader"
-            )
-
-            if source_file:
-                source_image = Image.open(source_file)
-                is_valid, message, processed_image = validate_image(source_image)
-
-                if is_valid:
-                    st.image(processed_image, caption="업로드된 이미지", width=300)
-                    st.success(message)
-                else:
-                    st.error(message)
-                    processed_image = None
-
-    with col2:
-        st.subheader("2️⃣ 각도 선택 & 생성")
-
-        if not GEMINI_API_KEY:
-            st.error("⚠️ Gemini API 키가 설정되지 않았습니다.")
-        elif processed_image:
-            # 원본 이미지 각도 선택
-            angle_options = {
-                "정면 (0°)": 0,
-                "오른쪽 측면 (90°)": 90,
-                "뒤 (180°)": 180,
-                "왼쪽 측면 (270°)": 270
-            }
-
-            selected_angle_label = st.radio(
-                "📐 대표 이미지의 촬영 각도를 선택하세요:",
-                options=list(angle_options.keys()),
-                horizontal=True,
-                help="업로드한 이미지가 어떤 각도에서 촬영되었는지 선택합니다"
-            )
-            source_angle = angle_options[selected_angle_label]
-
-            # 생성될 이미지 안내
-            angle_to_key = {0: 'front', 90: 'right', 180: 'back', 270: 'left'}
-            source_key = angle_to_key[source_angle]
-            angle_names = {'front': '정면 (0°)', 'right': '오른쪽 (90°)', 'back': '뒤 (180°)', 'left': '왼쪽 (270°)'}
-
-            generation_info = []
-            for key, name in angle_names.items():
-                if key == source_key:
-                    generation_info.append(f"• {name} - <strong>원본 사용</strong>")
-                else:
-                    generation_info.append(f"• {name} - AI 생성")
-
-            st.markdown(f"""
-            <div class="quality-info">
-                🔄 <strong>생성될 이미지:</strong><br>
-                {'<br>'.join(generation_info)}<br><br>
-                ⏱️ 예상 소요시간: 30-60초
-            </div>
-            """, unsafe_allow_html=True)
-
-            if st.button("🚀 360° 뷰 생성 시작", type="primary", use_container_width=True):
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-
-                def update_progress(current, total, message):
-                    progress = current / total
-                    progress_bar.progress(progress)
-                    status_text.text(f"🔄 {message} ({current}/{total})")
-
-                with st.spinner("360° 뷰 이미지 생성 중..."):
-                    start_time = time.time()
-                    results, errors = generate_all_360_views(processed_image, source_angle, update_progress)
-                    processing_time = time.time() - start_time
-
-                    st.session_state.views_360_results = results
-                    st.session_state.views_360_errors = errors
-
-                    # 성공/실패 카운트
-                    success_count = sum(1 for r in results.values() if r is not None)
-                    fail_count = sum(1 for e in errors.values() if e is not None)
-
-                    if success_count == 4:
-                        st.success(f"✅ 360° 뷰 생성 완료! ({processing_time:.1f}초)")
-                    elif success_count > 0:
-                        st.warning(f"⚠️ 일부 뷰 생성 완료: {success_count}/4 ({processing_time:.1f}초)")
-                    else:
-                        st.error("❌ 360° 뷰 생성 실패")
-        else:
-            st.info("👈 먼저 대표 이미지를 업로드하거나, 헤어 변경 탭에서 '360° 뷰 생성으로 이동' 버튼을 사용하세요")
-
-    # 결과 표시
-    if st.session_state.views_360_results:
-        st.divider()
-        st.subheader("3️⃣ 생성 결과")
-
-        results = st.session_state.views_360_results
-        errors = st.session_state.views_360_errors
-
-        cols = st.columns(4)
-        view_names = {'front': '정면 (0°)', 'right': '오른쪽 (90°)', 'back': '뒤 (180°)', 'left': '왼쪽 (270°)'}
-
-        for i, (view_key, view_name) in enumerate(view_names.items()):
-            with cols[i]:
-                if results.get(view_key):
-                    st.image(results[view_key], caption=view_name, use_container_width=True)
-
-                    # 다운로드 버튼
-                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    filename = f"360_{view_key}_{timestamp}.png"
-                    download_data = create_download_link(results[view_key], filename)
-                    st.download_button(
-                        f"💾 {view_key}",
-                        download_data,
-                        filename,
-                        "image/png",
-                        key=f"dl_360_{view_key}",
-                        use_container_width=True
-                    )
-                else:
-                    st.error(f"❌ {view_name}")
-                    if errors.get(view_key):
-                        st.caption(f"오류: {errors[view_key]}")
-
-        # 전체 다운로드 (ZIP)
-        st.divider()
-        st.subheader("4️⃣ 전체 다운로드")
-
-        successful_views = {k: v for k, v in results.items() if v is not None}
-        if len(successful_views) > 0:
-            # ZIP 파일 생성
-            import zipfile
-
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                for view_key, view_image in successful_views.items():
-                    img_buffer = io.BytesIO()
-                    view_image.save(img_buffer, format='PNG')
-                    img_buffer.seek(0)
-                    zip_file.writestr(f"view_{view_key}.png", img_buffer.getvalue())
-
-            zip_buffer.seek(0)
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                st.download_button(
-                    f"📦 모든 이미지 ZIP 다운로드 ({len(successful_views)}장)",
-                    zip_buffer.getvalue(),
-                    f"360_views_{timestamp}.zip",
-                    "application/zip",
-                    use_container_width=True,
-                    type="primary"
-                )
-
-        # 에러 상세 표시
-        failed_views = {k: v for k, v in errors.items() if v is not None}
-        if failed_views:
-            with st.expander("❌ 에러 상세 정보"):
-                for view_key, error_msg in failed_views.items():
-                    st.error(f"**{view_names.get(view_key, view_key)}**: {error_msg}")
 
 # ============== 배치 변환 탭 ==============
 with tab5:
