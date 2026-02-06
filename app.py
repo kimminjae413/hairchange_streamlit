@@ -412,6 +412,25 @@ st.markdown("""
         border-radius: 8px;
         margin: 1rem 0;
     }
+    .main-header-container {
+        position: relative;
+    }
+    .version-badge {
+        position: absolute;
+        top: 15px;
+        right: 20px;
+        background: rgba(255,255,255,0.25);
+        padding: 6px 16px;
+        border-radius: 20px;
+        font-size: 0.85em;
+        font-weight: 600;
+        backdrop-filter: blur(10px);
+    }
+    .footer-text {
+        text-align: center;
+        color: #666;
+        padding: 1rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -540,8 +559,139 @@ OUTPUT: Single high-quality image showing the {view_descriptions[view_key]} of t
 
 # ============== 배치 변환 (길이/각도) 함수들 ==============
 
-# 길이 카테고리 정의
-LENGTH_CATEGORIES = {
+# ============== 여성 헤어 카테고리 정의 ==============
+FEMALE_LENGTH_CATEGORIES = {
+    'A': {'name': 'Long (A)', 'description': '가슴 아래선/명치 라인 - below chest line', 'group': 'long'},
+    'B': {'name': 'Long (B)', 'description': 'A와 C의 중간 지점 - between A and C', 'group': 'long'},
+    'C': {'name': 'Semi Long', 'description': '쇄골 라인 아래 5cm - 5cm below collarbone', 'group': 'long'},
+    'D': {'name': 'Medium (D)', 'description': '어깨선에 닿는 길이 - shoulder line', 'group': 'medium'},
+    'E': {'name': 'Medium (E)', 'description': '어깨선보다 조금 짧은 길이 - slightly above shoulder', 'group': 'medium'},
+    'F': {'name': 'Bob (F)', 'description': '턱선 아래 3cm - 3cm below chin line', 'group': 'bob'},
+    'G': {'name': 'Bob (G)', 'description': '턱선 위 3cm - 3cm above chin line', 'group': 'bob'},
+    'H': {'name': 'Short', 'description': '픽시/숏컷 영역 - pixie/short cut', 'group': 'short'}
+}
+
+# 여성 길이 변환 규칙 (같은 그룹 또는 인접 그룹 내 변환)
+FEMALE_LENGTH_TRANSFORM_RULES = {
+    'A': ['B', 'C'],           # Long → Long 그룹 내
+    'B': ['A', 'C'],           # Long → Long 그룹 내
+    'C': ['A', 'B'],           # Long → Long 그룹 내
+    'D': ['E', 'F', 'G'],      # Medium → Medium + Bob
+    'E': ['D', 'F', 'G'],      # Medium → Medium + Bob
+    'F': ['D', 'E', 'G'],      # Bob → Bob + Medium
+    'G': ['D', 'E', 'F'],      # Bob → Bob + Medium
+    'H': []                     # Short → 길이 고정 (뉘앙스 변형만)
+}
+
+# 여성 앞머리(Bang) 카테고리
+FEMALE_BANG_CATEGORIES = {
+    'B0': {'name': 'None', 'description': '앞머리 없음 / 올백 / 센터·사이드 파트'},
+    'B1': {'name': 'Fore Head', 'description': '이마 중앙 라인'},
+    'B2': {'name': 'Eye Brow', 'description': '눈썹 라인 기준'},
+    'B3': {'name': 'Eye', 'description': '눈을 덮는 길이'},
+    'B4': {'name': 'Cheekbone', 'description': '광대뼈(치크본) 라인까지'}
+}
+
+# 여성 컬(Curl) 타입
+FEMALE_CURL_TYPES = {
+    'Straight': {'name': 'Straight', 'description': '스트레이트 - 직모'},
+    'C': {'name': 'C Curl', 'description': 'C컬 - 자연스러운 안쪽 말림'},
+    'CS': {'name': 'CS Curl', 'description': 'CS컬 - C컬과 S컬 중간'},
+    'S': {'name': 'S Curl', 'description': 'S컬 - 물결 웨이브'},
+    'SS': {'name': 'SS Curl', 'description': 'SS컬 - 강한 웨이브'},
+    'Mix': {'name': 'Mix Curl', 'description': '믹스컬 - 다양한 컬 조합'}
+}
+
+# ============== 남성 헤어 카테고리 정의 ==============
+
+# 남성 7대 스타일 카테고리
+MALE_STYLE_CATEGORIES = {
+    'SF': {
+        'name': 'SIDE FRINGE (사이드 프린지)',
+        'code': 'SF',
+        'description': '옆으로 흐르는 앞머리 - side-swept bangs',
+        'keywords': ['side fringe', 'side swept bangs', '옆으로 넘긴 앞머리']
+    },
+    'SP': {
+        'name': 'SIDE PART (사이드 파트)',
+        'code': 'SP',
+        'description': '옆 가르마 스타일 - side parted hairstyle',
+        'keywords': ['side part', '가르마', '옆가르마']
+    },
+    'FU': {
+        'name': 'FRINGE UP (프린지 업)',
+        'code': 'FU',
+        'description': '앞머리를 위로 올린 스타일 - bangs styled upward',
+        'keywords': ['fringe up', '앞머리 올림', '업스타일']
+    },
+    'PB': {
+        'name': 'PUSHED BACK (푸쉬드 백)',
+        'code': 'PB',
+        'description': '뒤로 넘긴 올백 스타일 - slicked back',
+        'keywords': ['pushed back', 'slicked back', '올백', '뒤로 넘김']
+    },
+    'BZ': {
+        'name': 'BUZZ (버즈)',
+        'code': 'BZ',
+        'description': '아주 짧은 버즈컷 - very short buzz cut',
+        'keywords': ['buzz cut', '버즈컷', '짧은 머리']
+    },
+    'CP': {
+        'name': 'CROP (크롭)',
+        'code': 'CP',
+        'description': '짧고 정돈된 크롭컷 - short textured crop',
+        'keywords': ['crop cut', '크롭컷', '짧은 앞머리']
+    },
+    'MC': {
+        'name': 'MOHICAN (모히칸)',
+        'code': 'MC',
+        'description': '중앙이 긴 모히칸 스타일 - mohawk/mohican style',
+        'keywords': ['mohican', 'mohawk', '모히칸', '소프트 모히칸']
+    }
+}
+
+# 남성 스타일별 뱅 스왑 규칙
+# 각 스타일에서 어떤 다른 스타일로 변환 가능한지 정의
+MALE_BANG_SWAP_RULES = {
+    # SIDE FRINGE → 앞머리 있는 스타일들과 호환
+    'SF': {
+        'can_swap_to': ['SP', 'FU', 'CP'],
+        'description': 'SF는 앞머리 기반이므로 SP, FU, CP로 변환 가능'
+    },
+    # SIDE PART → 가르마 기반, 올백 계열과 호환
+    'SP': {
+        'can_swap_to': ['SF', 'PB', 'FU'],
+        'description': 'SP는 가르마 기반이므로 SF, PB, FU로 변환 가능'
+    },
+    # FRINGE UP → 앞머리 올림, 다양한 스타일과 호환
+    'FU': {
+        'can_swap_to': ['SF', 'SP', 'PB', 'MC'],
+        'description': 'FU는 앞머리 올림이므로 대부분 스타일로 변환 가능'
+    },
+    # PUSHED BACK → 올백, 앞머리 없는 스타일들과 호환
+    'PB': {
+        'can_swap_to': ['SP', 'FU', 'MC'],
+        'description': 'PB는 올백이므로 SP, FU, MC로 변환 가능'
+    },
+    # BUZZ → 매우 짧아서 제한적
+    'BZ': {
+        'can_swap_to': ['CP'],
+        'description': 'BZ는 매우 짧아서 CP로만 변환 가능 (길이 제한)'
+    },
+    # CROP → 짧은 앞머리, 제한적 변환
+    'CP': {
+        'can_swap_to': ['SF', 'BZ', 'FU'],
+        'description': 'CP는 짧은 앞머리이므로 SF, BZ, FU로 변환 가능'
+    },
+    # MOHICAN → 중앙 긴 스타일, 특수
+    'MC': {
+        'can_swap_to': ['FU', 'PB'],
+        'description': 'MC는 중앙이 길어 FU, PB로 변환 가능'
+    }
+}
+
+# 남성 길이 카테고리 (기존 호환성 유지)
+MALE_LENGTH_CATEGORIES = {
     'A': {'name': '버즈컷/픽시컷', 'description': 'Very short - buzz cut or pixie cut level', 'cm': '1-5cm'},
     'B': {'name': '숏컷', 'description': 'Short - ear length or above', 'cm': '5-10cm'},
     'C': {'name': '미디엄 숏', 'description': 'Medium short - chin length', 'cm': '10-20cm'},
@@ -551,6 +701,55 @@ LENGTH_CATEGORIES = {
     'G': {'name': '슈퍼롱', 'description': 'Very long - waist length or longer', 'cm': '50cm+'},
     'H': {'name': '뉘앙스 변형', 'description': 'Same length with subtle styling variations', 'cm': 'same'}
 }
+
+# 남성 앞머리(Bang) 카테고리 - 스타일에 따른 앞머리 위치
+MALE_BANG_CATEGORIES = {
+    'B0': {'name': 'None/올백', 'description': '앞머리 없음 / 올백 / 뒤로 넘김', 'styles': ['PB', 'BZ']},
+    'B1': {'name': 'Forehead', 'description': '이마 중앙 라인 (짧은 앞머리)', 'styles': ['CP', 'BZ']},
+    'B2': {'name': 'Eyebrow', 'description': '눈썹 라인 기준', 'styles': ['SF', 'SP', 'CP']},
+    'B3': {'name': 'Eye', 'description': '눈을 덮는 길이', 'styles': ['SF', 'FU']},
+    'B4': {'name': 'Cheekbone', 'description': '광대뼈 라인까지 (긴 앞머리)', 'styles': ['SF', 'SP', 'MC']}
+}
+
+# 성별에 따른 카테고리 선택 함수
+def get_length_categories(gender):
+    if gender == 'female':
+        return FEMALE_LENGTH_CATEGORIES
+    else:
+        return MALE_LENGTH_CATEGORIES
+
+def get_transform_rules(gender, source_length):
+    if gender == 'female':
+        return FEMALE_LENGTH_TRANSFORM_RULES.get(source_length, [])
+    else:
+        # 남성은 모든 길이 변환 허용 (기존 로직)
+        return [l for l in MALE_LENGTH_CATEGORIES.keys() if l != source_length and l != 'H']
+
+def get_bang_categories(gender):
+    """성별에 따른 앞머리 카테고리 반환"""
+    if gender == 'female':
+        return FEMALE_BANG_CATEGORIES
+    else:
+        return MALE_BANG_CATEGORIES
+
+def get_curl_types(gender):
+    """성별에 따른 컬 타입 반환 (여성만 해당)"""
+    if gender == 'female':
+        return FEMALE_CURL_TYPES
+    return None
+
+def get_male_style_swap_options(source_style):
+    """남성 스타일에서 변환 가능한 스타일 목록 반환"""
+    if source_style in MALE_BANG_SWAP_RULES:
+        return MALE_BANG_SWAP_RULES[source_style]['can_swap_to']
+    return []
+
+def get_male_style_info(style_code):
+    """남성 스타일 코드에 대한 상세 정보 반환"""
+    return MALE_STYLE_CATEGORIES.get(style_code, None)
+
+# 기본 LENGTH_CATEGORIES (하위 호환성)
+LENGTH_CATEGORIES = MALE_LENGTH_CATEGORIES
 
 # 각도 옵션 정의
 ANGLE_OPTIONS = {
@@ -562,7 +761,8 @@ ANGLE_OPTIONS = {
 }
 
 
-def generate_length_variation(image, source_length, target_length, gender="neutral"):
+def generate_length_variation(image, source_length, target_length, gender="neutral",
+                              bang=None, curl=None, male_style=None, target_male_style=None):
     """
     Gemini로 헤어 길이 변환 이미지 생성
 
@@ -571,6 +771,10 @@ def generate_length_variation(image, source_length, target_length, gender="neutr
         source_length: 원본 길이 카테고리 ('A'-'H')
         target_length: 목표 길이 카테고리 ('A'-'H')
         gender: 성별 ('male', 'female', 'neutral')
+        bang: 앞머리 타입 (B0-B4)
+        curl: 컬 타입 (여성용: Straight, C, CS, S, SS, Mix)
+        male_style: 현재 남성 스타일 (SF, SP, FU, PB, BZ, CP, MC)
+        target_male_style: 목표 남성 스타일
 
     Returns:
         PIL Image 또는 None, 에러 메시지
@@ -578,14 +782,87 @@ def generate_length_variation(image, source_length, target_length, gender="neutr
     if not GEMINI_API_KEY:
         return None, "Gemini API 키가 설정되지 않았습니다."
 
-    if source_length == target_length and target_length != 'H':
-        return image, None  # 같은 길이면 원본 반환
+    if source_length == target_length and target_length != 'H' and target_male_style is None:
+        return image, None  # 같은 길이이고 스타일 변환도 없으면 원본 반환
 
-    source_info = LENGTH_CATEGORIES.get(source_length, LENGTH_CATEGORIES['D'])
-    target_info = LENGTH_CATEGORIES.get(target_length, LENGTH_CATEGORIES['D'])
+    # 성별에 따른 카테고리 선택
+    length_cats = get_length_categories(gender)
+    source_info = length_cats.get(source_length, length_cats.get('D', LENGTH_CATEGORIES['D']))
+    target_info = length_cats.get(target_length, length_cats.get('D', LENGTH_CATEGORIES['D']))
 
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
+
+        # 성별별 상세 스펙 문자열 생성
+        gender_spec = ""
+        if gender == 'female':
+            bang_info = FEMALE_BANG_CATEGORIES.get(bang, {}) if bang else {}
+            curl_info = FEMALE_CURL_TYPES.get(curl, {}) if curl else {}
+            gender_spec = f"""
+👩 FEMALE HAIR SPECIFICATIONS:
+- Length Category: {target_length} - {target_info.get('name', '')} ({target_info.get('description', '')})
+- Length Group: {target_info.get('group', 'medium')}
+- Bang Style: {bang} - {bang_info.get('name', 'None')} ({bang_info.get('description', '')})
+- Curl Type: {curl_info.get('name', 'Straight')} ({curl_info.get('description', '')})
+
+📋 FEMALE LENGTH GUIDE:
+- A (Long): 가슴 아래선/명치 라인 (below chest line)
+- B (Long): A와 C의 중간 지점
+- C (Semi Long): 쇄골 라인 아래 5cm
+- D (Medium): 어깨선에 닿는 길이
+- E (Medium): 어깨선보다 조금 짧은 길이
+- F (Bob): 턱선 아래 3cm
+- G (Bob): 턱선 위 3cm
+- H (Short): 픽시/숏컷 영역
+
+📋 BANG POSITIONS:
+- B0: 앞머리 없음 / 올백 / 센터·사이드 파트
+- B1: 이마 중앙 라인
+- B2: 눈썹 라인 기준
+- B3: 눈을 덮는 길이
+- B4: 광대뼈(치크본) 라인까지
+
+📋 CURL TYPES:
+- Straight: 직모
+- C: C컬 - 자연스러운 안쪽 말림
+- CS: CS컬 - C컬과 S컬 중간
+- S: S컬 - 물결 웨이브
+- SS: SS컬 - 강한 웨이브
+- Mix: 믹스컬 - 다양한 컬 조합"""
+
+        elif gender == 'male':
+            style_info = MALE_STYLE_CATEGORIES.get(male_style, {}) if male_style else {}
+            target_style_info = MALE_STYLE_CATEGORIES.get(target_male_style, {}) if target_male_style else {}
+            bang_info = MALE_BANG_CATEGORIES.get(bang, {}) if bang else {}
+
+            style_change = ""
+            if target_male_style and target_male_style != male_style:
+                style_change = f"""
+🔄 STYLE TRANSFORMATION:
+- FROM: {male_style} - {style_info.get('name', '')}
+- TO: {target_male_style} - {target_style_info.get('name', '')}
+"""
+
+            gender_spec = f"""
+👨 MALE HAIR SPECIFICATIONS:
+- Current Style: {male_style} - {style_info.get('name', '')} ({style_info.get('description', '')})
+- Bang Style: {bang} - {bang_info.get('name', 'None')} ({bang_info.get('description', '')})
+{style_change}
+📋 MALE 7 STYLE CATEGORIES:
+- SF (SIDE FRINGE): 옆으로 흐르는 앞머리 - side-swept bangs
+- SP (SIDE PART): 옆 가르마 스타일 - side parted hairstyle
+- FU (FRINGE UP): 앞머리를 위로 올린 스타일 - bangs styled upward
+- PB (PUSHED BACK): 뒤로 넘긴 올백 스타일 - slicked back
+- BZ (BUZZ): 아주 짧은 버즈컷 - very short buzz cut
+- CP (CROP): 짧고 정돈된 크롭컷 - short textured crop
+- MC (MOHICAN): 중앙이 긴 모히칸 스타일 - mohawk/mohican style
+
+📋 MALE BANG POSITIONS:
+- B0: 앞머리 없음 / 올백 (PB, BZ)
+- B1: 이마 중앙 라인 (CP, BZ)
+- B2: 눈썹 라인 기준 (SF, SP, CP)
+- B3: 눈을 덮는 길이 (SF, FU)
+- B4: 광대뼈 라인 (SF, SP, MC)"""
 
         if target_length == 'H':
             # 뉘앙스 변형 - 같은 길이, 다른 스타일링
@@ -596,9 +873,11 @@ Create a SUBTLE VARIATION of the same hairstyle with different styling nuances.
 
 ⚠️ ABSOLUTE RULES:
 1. FACE: Keep the EXACT same face - same eyes, nose, lips, skin tone, facial structure. NO changes.
-2. HAIR LENGTH: Keep the EXACT same length ({source_info['cm']}).
+2. HAIR LENGTH: Keep the EXACT same length.
 3. HAIR COLOR: Keep the EXACT same color.
 4. CLOTHES & BACKGROUND: Keep exactly the same.
+
+{gender_spec}
 
 🎨 STYLING VARIATIONS TO APPLY (choose 1-2):
 - Slightly different parting direction
@@ -611,30 +890,31 @@ The change should be noticeable but subtle - like the same person styled their h
 
 OUTPUT: Single high-quality image with the subtle styling variation."""
         else:
-            # 길이 변환
-            prompt = f"""[HAIR LENGTH TRANSFORMATION TASK]
+            # 길이 변환 (+ 스타일 변환 if applicable)
+            prompt = f"""[HAIR TRANSFORMATION TASK]
 
-Transform the hairstyle in this image from {source_info['name']} ({source_info['cm']}) to {target_info['name']} ({target_info['cm']}).
+Transform the hairstyle in this image.
 
 ⚠️ ABSOLUTE RULES - DO NOT VIOLATE:
 1. FACE: Keep the EXACT same face. Same eyes, nose, lips, skin tone, facial structure, makeup. NO changes whatsoever.
 2. HAIR COLOR: Keep the EXACT same hair color and tone.
-3. HAIR TEXTURE: Keep similar hair texture (straight/wavy/curly).
-4. CLOTHES: Keep the EXACT same clothing.
-5. BACKGROUND: Keep a clean, neutral studio background.
-6. LIGHTING: Keep consistent professional studio lighting.
+3. CLOTHES: Keep the EXACT same clothing.
+4. BACKGROUND: Keep a clean, neutral studio background.
+5. LIGHTING: Keep consistent professional studio lighting.
 
 📏 LENGTH TRANSFORMATION:
-- FROM: {source_info['description']} ({source_info['cm']})
-- TO: {target_info['description']} ({target_info['cm']})
+- FROM: {source_info.get('name', source_length)} ({source_info.get('description', '')})
+- TO: {target_info.get('name', target_length)} ({target_info.get('description', '')})
+
+{gender_spec}
 
 🎯 IMPORTANT GUIDELINES:
 - The hairstyle should look natural and professionally done
-- Maintain the overall style aesthetic (if modern, keep modern; if classic, keep classic)
+- Maintain realistic hair physics and proportions
 - Hair should frame the face appropriately for the new length
-- {"For male: maintain masculine styling appropriate for the length" if gender == "male" else "For female: maintain feminine styling appropriate for the length" if gender == "female" else "Maintain gender-neutral professional styling"}
+- Apply the specified bang position and curl type accurately
 
-OUTPUT: Single high-quality image showing the same person with hair length changed to {target_info['name']}."""
+OUTPUT: Single high-quality image showing the transformation."""
 
         response = client.models.generate_content(
             model="gemini-2.0-flash-exp",
@@ -744,7 +1024,8 @@ OUTPUT: Single high-quality image showing the {angle_info['name']} view of this 
             return None, f"각도 변환 실패: {error_msg}"
 
 
-def generate_batch_variations(image, source_length, target_lengths, target_angles, gender="neutral", progress_callback=None):
+def generate_batch_variations(image, source_length, target_lengths, target_angles, gender="neutral", progress_callback=None,
+                              bang=None, curl=None, male_style=None, target_male_style=None):
     """
     배치로 길이/각도 변환 이미지 생성
 
@@ -755,6 +1036,10 @@ def generate_batch_variations(image, source_length, target_lengths, target_angle
         target_angles: 목표 각도 리스트 [0, 22.5, 45, ...]
         gender: 성별
         progress_callback: 진행 상황 콜백 함수(current, total, message)
+        bang: 앞머리 타입 (B0-B4)
+        curl: 컬 타입 (여성용)
+        male_style: 현재 남성 스타일 카테고리 (SF, SP, FU, PB, BZ, CP, MC)
+        target_male_style: 목표 남성 스타일 카테고리
 
     Returns:
         dict: {(length, angle): image} 결과 딕셔너리
@@ -772,7 +1057,10 @@ def generate_batch_variations(image, source_length, target_lengths, target_angle
         if progress_callback:
             progress_callback(current_task, total_tasks, f"길이 변환 중: {LENGTH_CATEGORIES[length]['name']}")
 
-        length_image, length_error = generate_length_variation(image, source_length, length, gender)
+        length_image, length_error = generate_length_variation(
+            image, source_length, length, gender,
+            bang=bang, curl=curl, male_style=male_style, target_male_style=target_male_style
+        )
 
         if length_error and length != source_length:
             # 길이 변환 실패 시 해당 길이의 모든 각도에 에러 기록
@@ -1222,53 +1510,150 @@ def poll_vmodel_task(request_id, task_id, max_attempts=90):
     st.error("처리 시간 초과 - VModel 서버가 응답하지 않습니다")
     return None
 
-def process_with_vmodel_api(seed_image, ref_image, quality_mode="high", enable_gemini=False, gender="male"):
-    """VModel API로 헤어 변경 처리 - 9단계 로깅 포함, VModel 문서 호환 + Gemini 후처리"""
-    
-    if not VMODEL_API_KEY:
-        st.error("⚠️ VModel API 키가 설정되지 않았습니다. Streamlit Secrets에서 VMODEL_API_KEY를 설정해주세요.")
-        return None
-    
+# ============== VModel 처리 헬퍼 함수들 ==============
+
+def _upload_images_for_vmodel(seed_image, ref_image, request_id):
+    """VModel용 이미지 업로드 (Cloudinary 우선)
+
+    Returns:
+        tuple: (target_url, source_url) 또는 실패시 (None, None)
+    """
+    st.info("🔄 이미지를 업로드하고 있습니다... (Cloudinary 우선)")
+
+    target_url = upload_image_to_cloudinary(seed_image)  # 사람 얼굴 이미지
+    source_url = upload_image_to_cloudinary(ref_image)   # 헤어스타일 참조 이미지
+
+    if not target_url or not source_url:
+        st.error("이미지 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.")
+        return None, None
+
+    log_9step_process(request_id, "2_UPLOAD_COMPLETE", "이미지 업로드 완료", {
+        "target_url": target_url,
+        "source_url": source_url
+    })
+
+    st.success("✅ 이미지 업로드 완료!")
+    return target_url, source_url
+
+
+def _create_vmodel_payload(source_url, target_url):
+    """VModel API payload 생성"""
+    return {
+        "version": "5c0440717a995b0bbd93377bd65dbb4fe360f67967c506aa6bd8f6b660733a7e",
+        "input": {
+            "source": source_url,
+            "target": target_url,
+            "disable_safety_checker": False,
+        }
+    }
+
+
+def _call_vmodel_api(payload, request_id):
+    """VModel API 호출
+
+    Returns:
+        tuple: (response, first_response_time)
+    """
+    headers = {
+        "Authorization": f"Bearer {VMODEL_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    log_vmodel_request(request_id, payload)
+    log_9step_process(request_id, "4_API_CALL_START", "VModel API 호출 시작")
+
+    first_response_start = time.time()
+    response = requests.post(
+        "https://api.vmodel.ai/api/tasks/v1/create",
+        json=payload,
+        headers=headers,
+        timeout=30
+    )
+    first_response_time = time.time() - first_response_start
+
+    log_9step_process(request_id, "5_FIRST_RESPONSE", f"첫 응답 수신 | 반응시간: {first_response_time:.3f}초", {
+        "status_code": response.status_code,
+        "response_time": first_response_time
+    })
+
+    return response, first_response_time
+
+
+def _handle_vmodel_error(response, request_id, first_response_time):
+    """VModel API 에러 처리"""
     try:
-        request_id = f"req_{int(time.time())}_{uuid.uuid4().hex[:8]}"
-        
+        error_data = response.json()
+        error_code = error_data.get('code', response.status_code)
+
+        log_vmodel_completion(
+            request_id=request_id,
+            task_id=None,
+            success=False,
+            error=str(error_data),
+            first_response_time=first_response_time
+        )
+
+        if error_code == 402 or response.status_code == 402:
+            st.error("💳 VModel 잔액이 부족합니다. 크레딧을 충전해주세요.")
+        else:
+            st.error(f"API 오류: {error_data}")
+    except:
+        log_vmodel_completion(
+            request_id=request_id,
+            task_id=None,
+            success=False,
+            error=f"HTTP {response.status_code}",
+            first_response_time=first_response_time
+        )
+
+        if response.status_code == 402:
+            st.error("💳 VModel 잔액이 부족합니다. 크레딧을 충전해주세요.")
+        else:
+            st.error(f"API 호출 실패: HTTP {response.status_code}")
+
+
+def _apply_gemini_postprocess(vmodel_result, enable_gemini, gender):
+    """Gemini 후처리 적용 (선택사항)"""
+    if not vmodel_result or not enable_gemini:
+        return vmodel_result
+
+    st.info("🔄 Gemini 후처리 진행 중...")
+    enhanced_result = enhance_with_gemini(vmodel_result, gender)
+
+    if enhanced_result:
+        return enhanced_result
+    else:
+        st.warning("⚠️ Gemini 후처리 실패, VModel 결과 반환")
+        return vmodel_result
+
+
+def process_with_vmodel_api(seed_image, ref_image, quality_mode="high", enable_gemini=False, gender="male"):
+    """VModel API로 헤어 변경 처리 - 리팩토링된 버전"""
+
+    if not VMODEL_API_KEY:
+        st.error("⚠️ VModel API 키가 설정되지 않았습니다.")
+        return None
+
+    request_id = f"req_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+
+    try:
+        # 1. 요청 시작 로깅
         log_9step_process(request_id, "1_REQUEST_START", "헤어스타일 변환 요청 시작", {
             "quality_mode": quality_mode,
             "seed_size": seed_image.size,
             "ref_size": ref_image.size
         })
-        
-        st.info("🔄 이미지를 업로드하고 있습니다... (Cloudinary 우선)")
-        
-        # VModel 문서에 따른 올바른 매핑 - Cloudinary 우선
-        target_url = upload_image_to_cloudinary(seed_image)    # 사람 얼굴 이미지
-        source_url = upload_image_to_cloudinary(ref_image)     # 헤어스타일 참조 이미지
-        
+
+        # 2. 이미지 업로드
+        target_url, source_url = _upload_images_for_vmodel(seed_image, ref_image, request_id)
         if not target_url or not source_url:
-            st.error("이미지 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.")
             return None
-        
-        log_9step_process(request_id, "2_UPLOAD_COMPLETE", "이미지 업로드 완료", {
-            "target_url": target_url,
-            "source_url": source_url
-        })
-        
-        st.success("✅ 이미지 업로드 완료!")
-        
-        # VModel 공식 문서 형식에 맞춘 payload
-        payload = {
-            "version": "5c0440717a995b0bbd93377bd65dbb4fe360f67967c506aa6bd8f6b660733a7e",
-            "input": {
-                "source": source_url,    # 헤어스타일 참조 이미지
-                "target": target_url,    # 사람 얼굴 이미지
-                "disable_safety_checker": False,
-            }
-        }
-        
-        log_9step_process(request_id, "3_API_PREPARED", "VModel API 요청 준비 완료", {
-            "payload": payload
-        })
-        
+
+        # 3. API 페이로드 준비
+        payload = _create_vmodel_payload(source_url, target_url)
+        log_9step_process(request_id, "3_API_PREPARED", "VModel API 요청 준비 완료", {"payload": payload})
+
+        # 고품질 모드 UI 표시
         if quality_mode == "high":
             st.markdown("""
             <div class="quality-info">
@@ -1278,92 +1663,28 @@ def process_with_vmodel_api(seed_image, ref_image, quality_mode="high", enable_g
                 • 처리시간 약간 증가 (30-45초)
             </div>
             """, unsafe_allow_html=True)
-        
-        headers = {
-            "Authorization": f"Bearer {VMODEL_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        log_vmodel_request(request_id, payload)
-        
-        log_9step_process(request_id, "4_API_CALL_START", "VModel API 호출 시작")
-        
-        first_response_start = time.time()
-        response = requests.post(
-            "https://api.vmodel.ai/api/tasks/v1/create", 
-            json=payload, 
-            headers=headers, 
-            timeout=30
-        )
-        first_response_time = time.time() - first_response_start
-        
-        log_9step_process(request_id, "5_FIRST_RESPONSE", f"첫 응답 수신 | 반응시간: {first_response_time:.3f}초", {
-            "status_code": response.status_code,
-            "response_time": first_response_time
-        })
-        
+
+        # 4-5. API 호출
+        response, first_response_time = _call_vmodel_api(payload, request_id)
         st.session_state[f'first_response_{request_id}'] = first_response_time
-        
+
+        # 6. 성공 응답 처리
         if response.status_code == 200:
             result = response.json()
-            
             if result.get('code') == 200 and 'result' in result:
                 task_id = result['result'].get('task_id')
                 if task_id:
                     log_9step_process(request_id, "6_TASK_CREATED", f"Task 생성 완료 | Task ID: {task_id}")
-
-                    # VModel 결과 가져오기
                     vmodel_result = poll_vmodel_task(request_id, task_id, max_attempts=90)
+                    return _apply_gemini_postprocess(vmodel_result, enable_gemini, gender)
 
-                    # Gemini 후처리 적용 (옵션이 활성화된 경우)
-                    if vmodel_result and enable_gemini:
-                        st.info("🔄 Gemini 후처리 진행 중...")
-                        enhanced_result = enhance_with_gemini(vmodel_result, gender)
-                        if enhanced_result:
-                            return enhanced_result
-                        else:
-                            st.warning("⚠️ Gemini 후처리 실패, VModel 결과 반환")
-                            return vmodel_result
-
-                    return vmodel_result
-        
         # 에러 처리
-        try:
-            error_data = response.json()
-            error_code = error_data.get('code', response.status_code)
-
-            log_vmodel_completion(
-                request_id=request_id,
-                task_id=None,
-                success=False,
-                error=str(error_data),
-                first_response_time=first_response_time
-            )
-
-            # 402 Payment Required - 잔액 부족
-            if error_code == 402 or response.status_code == 402:
-                st.error("💳 VModel 잔액이 부족합니다. 크레딧을 충전해주세요.")
-            else:
-                st.error(f"API 오류: {error_data}")
-        except:
-            log_vmodel_completion(
-                request_id=request_id,
-                task_id=None,
-                success=False,
-                error=f"HTTP {response.status_code}",
-                first_response_time=first_response_time
-            )
-
-            if response.status_code == 402:
-                st.error("💳 VModel 잔액이 부족합니다. 크레딧을 충전해주세요.")
-            else:
-                st.error(f"API 호출 실패: HTTP {response.status_code}")
-        
+        _handle_vmodel_error(response, request_id, first_response_time)
         return None
-        
+
     except Exception as e:
         log_vmodel_completion(
-            request_id=request_id if 'request_id' in locals() else "unknown",
+            request_id=request_id,
             task_id=None,
             success=False,
             error=str(e),
@@ -1381,10 +1702,8 @@ def create_download_link(image, filename):
 
 # 메인 UI
 st.markdown("""
-<div class="main-header" style="position: relative;">
-    <div style="position: absolute; top: 15px; right: 20px; background: rgba(255,255,255,0.25); padding: 6px 16px; border-radius: 20px; font-size: 0.85em; font-weight: 600; backdrop-filter: blur(10px);">
-        ver.1.3 🔄
-    </div>
+<div class="main-header main-header-container">
+    <div class="version-badge">ver.1.3 🔄</div>
     <h1>💇‍♀️ AI 헤어스타일 변경 서비스</h1>
     <p>AI로 원하는 헤어스타일을 미리 체험해보세요!</p>
     <small>🎯 <strong>고품질 모드</strong> - 선명한 머리카락 디테일 지원 | 🤖 Gemini 후처리 | 🔄 <strong>360° 뷰 생성</strong> NEW!</small>
@@ -2084,6 +2403,74 @@ with tab5:
             st.subheader("3️⃣ 성별")
             batch_gender = st.radio("성별", ["male", "female", "neutral"], horizontal=True, index=2)
 
+            # 성별별 추가 옵션
+            selected_bang = None
+            selected_curl = None
+            selected_male_style = None
+            target_male_style = None
+
+            if batch_gender == 'female':
+                st.subheader("👩 여성 옵션")
+
+                # 앞머리 선택
+                st.markdown("**💇 앞머리 (Bang)**")
+                bang_options = list(FEMALE_BANG_CATEGORIES.keys())
+                selected_bang = st.selectbox(
+                    "현재 앞머리",
+                    bang_options,
+                    format_func=lambda x: f"{x}: {FEMALE_BANG_CATEGORIES[x]['name']} - {FEMALE_BANG_CATEGORIES[x]['description']}",
+                    key="female_bang"
+                )
+
+                # 컬 타입 선택
+                st.markdown("**🌀 컬 타입 (Curl)**")
+                curl_options = list(FEMALE_CURL_TYPES.keys())
+                selected_curl = st.selectbox(
+                    "현재 컬",
+                    curl_options,
+                    format_func=lambda x: f"{FEMALE_CURL_TYPES[x]['name']} - {FEMALE_CURL_TYPES[x]['description']}",
+                    key="female_curl"
+                )
+
+            elif batch_gender == 'male':
+                st.subheader("👨 남성 옵션")
+
+                # 현재 스타일 카테고리 선택
+                st.markdown("**💈 현재 스타일**")
+                style_options = list(MALE_STYLE_CATEGORIES.keys())
+                selected_male_style = st.selectbox(
+                    "현재 스타일 카테고리",
+                    style_options,
+                    format_func=lambda x: f"{x}: {MALE_STYLE_CATEGORIES[x]['name']}",
+                    key="male_style_current"
+                )
+
+                # 변환 가능한 스타일 표시
+                if selected_male_style:
+                    swap_options = get_male_style_swap_options(selected_male_style)
+                    if swap_options:
+                        st.markdown(f"**🔄 변환 가능 스타일**: {', '.join(swap_options)}")
+                        target_male_style = st.selectbox(
+                            "목표 스타일 (선택사항)",
+                            ["변환 안 함"] + swap_options,
+                            format_func=lambda x: x if x == "변환 안 함" else f"{x}: {MALE_STYLE_CATEGORIES[x]['name']}",
+                            key="male_style_target"
+                        )
+                        if target_male_style == "변환 안 함":
+                            target_male_style = None
+                    else:
+                        st.info(f"ℹ️ {selected_male_style}는 다른 스타일로 변환이 제한됩니다.")
+
+                # 앞머리 선택
+                st.markdown("**💇 앞머리 (Bang)**")
+                male_bang_options = list(MALE_BANG_CATEGORIES.keys())
+                selected_bang = st.selectbox(
+                    "현재 앞머리",
+                    male_bang_options,
+                    format_func=lambda x: f"{x}: {MALE_BANG_CATEGORIES[x]['name']} - {MALE_BANG_CATEGORIES[x]['description']}",
+                    key="male_bang"
+                )
+
         with col_right:
             st.subheader("4️⃣ 변환 옵션 선택")
 
@@ -2170,7 +2557,11 @@ with tab5:
                         selected_lengths,
                         selected_angles,
                         batch_gender,
-                        update_progress
+                        update_progress,
+                        bang=selected_bang,
+                        curl=selected_curl,
+                        male_style=selected_male_style,
+                        target_male_style=target_male_style
                     )
 
                     processing_time = time.time() - start_time
@@ -2321,7 +2712,7 @@ with tab4:
 # 푸터
 st.divider()
 st.markdown("""
-<div style="text-align: center; color: #666; padding: 1rem;">
+<div class="footer-text">
     💇‍♀️ AI Hair Style Transfer | Made with ❤️ using Streamlit Cloud<br>
     <small>🎨 고품질 모드 + 🤖 <strong>Gemini 후처리</strong>로 자연스러운 헤어 합성!</small><br>
     <small>🌐 VModel + Gemini 2단계 처리 | Cloudinary 우선 업로드</small><br>
