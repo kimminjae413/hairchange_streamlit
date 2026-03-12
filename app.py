@@ -987,33 +987,54 @@ def generate_angle_variation(image, target_angle, gender="female"):
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
 
-        prompt = f"""[CAMERA ANGLE ROTATION TASK]
+        # 방향별 시각적 단서 생성
+        if direction == "RIGHT":
+            # 우측 회전 = 카메라가 인물의 오른쪽으로 이동 = 인물의 왼쪽 얼굴이 더 보임
+            ear_visible = "LEFT ear becomes more visible"
+            nose_direction = "nose points toward the RIGHT side of the image"
+            face_turn = "the person's face is turned to their RIGHT (viewer's left)"
+            cheek_visible = "LEFT cheek is more visible, RIGHT cheek is hidden"
+            mirror_note = "This is the MIRROR OPPOSITE of a left turn. If left turn shows the right ear, this must show the LEFT ear."
+        else:
+            # 좌측 회전 = 카메라가 인물의 왼쪽으로 이동 = 인물의 오른쪽 얼굴이 더 보임
+            ear_visible = "RIGHT ear becomes more visible"
+            nose_direction = "nose points toward the LEFT side of the image"
+            face_turn = "the person's face is turned to their LEFT (viewer's right)"
+            cheek_visible = "RIGHT cheek is more visible, LEFT cheek is hidden"
+            mirror_note = "This is the MIRROR OPPOSITE of a right turn. If right turn shows the left ear, this must show the RIGHT ear."
+
+        prompt = f"""[CAMERA ANGLE ROTATION TASK - {direction} {abs_angle}°]
 
 The source image shows a person from the FRONT VIEW (0°).
-Rotate the camera {abs_angle}° to the {direction} to show the person from {angle_info.get('name', f'{direction_kr} {abs_angle}°')} view.
+Rotate the camera {abs_angle}° to the {direction}.
+
+🔴 CRITICAL DIRECTION INSTRUCTION:
+- Direction: **{direction}** (카메라가 인물의 {direction_kr}으로 이동)
+- {face_turn}
+- {nose_direction}
+- {ear_visible}
+- {cheek_visible}
+- {mirror_note}
 
 ⚠️ ABSOLUTE RULES - DO NOT VIOLATE:
 1. FACE: Keep the EXACT same face. Same eyes, nose, lips, skin tone, facial structure. NO changes.
 2. HAIR: Keep the EXACT same hairstyle. Same cut, length, color, texture, styling, volume. NO changes.
 3. CLOTHES: Keep the EXACT same clothing. Same color, pattern, style. NO changes.
 4. BACKGROUND: Keep a clean, neutral studio background.
-5. LIGHTING: Keep consistent professional studio lighting from similar direction.
+5. LIGHTING: Keep consistent professional studio lighting.
+6. DIRECTION: The face MUST turn to the {direction}. Do NOT generate the opposite direction.
 
 📐 CAMERA ROTATION DETAILS:
-- Target angle: {abs_angle}° to the {direction}
+- Camera moves to the {direction} of the person by {abs_angle}°
 - View name: {angle_info.get('name', f'{direction_kr} {abs_angle}°')}
-- Description: {angle_info.get('description', '')}
 
-🎯 ANGLE-SPECIFIC GUIDANCE:
-{"- Slight turn: Face mostly visible, slight angle to the " + direction.lower() if abs_angle == 22.5 else ""}
-{"- Quarter turn: Face at 45° angle, showing " + direction.lower() + " side more" if abs_angle == 45 else ""}
-{"- Three-quarter turn: Face mostly turned to the " + direction.lower() + ", showing more of the side profile" if abs_angle == 67.5 else ""}
-{"- Full profile: Complete side view showing the " + direction.lower() + " side, one eye visible" if abs_angle == 90 else ""}
+🎯 VISUAL CHECKLIST for {direction} {abs_angle}°:
+{"- 22.5° " + direction + ": Very slight turn. " + cheek_visible + ". Both eyes still fully visible. " + nose_direction + " slightly." if abs_angle == 22.5 else ""}
+{"- 45° " + direction + ": Clear quarter turn. " + ear_visible + ". " + nose_direction + ". One eye partially obscured by the nose bridge." if abs_angle == 45 else ""}
+{"- 67.5° " + direction + ": Strong three-quarter turn. " + ear_visible + " clearly. " + nose_direction + ". Far eye mostly hidden." if abs_angle == 67.5 else ""}
+{"- 90° " + direction + ": Full profile/side view. " + ear_visible + " fully. Only one eye visible. " + nose_direction + " completely." if abs_angle == 90 else ""}
 
-This is NOT creative generation. This is a STRICT camera rotation task.
-The output must look like a photo of the SAME person taken from {abs_angle}° {direction.lower()} angle.
-
-OUTPUT: Single high-quality image showing the {angle_info.get('name', f'{direction_kr} {abs_angle}°')} view of this exact person."""
+OUTPUT: Single high-quality image showing the person from {abs_angle}° {direction} view. The face MUST be turned to the {direction}."""
 
         response = client.models.generate_content(
             model="gemini-3-pro-image-preview",
