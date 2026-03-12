@@ -1881,14 +1881,14 @@ st.markdown("""
     <div class="version-badge">ver.1.3 🔄</div>
     <h1>💇‍♀️ AI 헤어스타일 변경 서비스</h1>
     <p>AI로 원하는 헤어스타일을 미리 체험해보세요!</p>
-    <small>🎯 <strong>고품질 모드</strong> - 선명한 머리카락 디테일 지원 | 🤖 Gemini 후처리 | 🔄 <strong>배치 변환</strong></small>
+    <small>🎯 <strong>고품질 모드</strong> - 선명한 머리카락 디테일 지원 | 🤖 Gemini 후처리 | 🔄 <strong>일괄 생성</strong></small>
 </div>
 """, unsafe_allow_html=True)
 
 # API 키 체크
 if not VMODEL_API_KEY:
     st.warning("""
-    ⚠️ **VModel API 키 미설정** - 헤어 변경 기능 사용 불가 (배치 변환은 Gemini API로 작동)
+    ⚠️ **VModel API 키 미설정** - 헤어 변경 기능 사용 불가 (일괄 생성은 Gemini API로 작동)
 
     VModel API 키 설정: Streamlit Secrets에 `VMODEL_API_KEY = "your-key"` 추가
     """)
@@ -2032,7 +2032,7 @@ with st.sidebar:
     """)
 
 # 메인 탭
-tab2, tab1, tab5, tab4 = st.tabs(["📸 시드 관리", "🎨 헤어 변경", "🔄 배치 변환", "📝 처리 기록"])
+tab2, tab1, tab5, tab4 = st.tabs(["📸 시드 관리", "🎨 헤어 변경", "🔄 일괄 생성", "📝 처리 기록"])
 
 with tab2:
     st.header("📸 시드 이미지 관리")
@@ -2289,7 +2289,7 @@ with tab1:
 
 # ============== 배치 변환 탭 ==============
 with tab5:
-    st.header("🔄 배치 변환")
+    st.header("🔄 일괄 생성")
     # 세션 상태 초기화
     if 'batch_results' not in st.session_state:
         st.session_state.batch_results = None
@@ -2313,13 +2313,13 @@ with tab5:
         if batch_gender == 'female':
             st.markdown("""
             <div class="info-box">
-                💡 <strong>여성 배치 변환</strong>: 하나의 이미지를 다양한 <strong>길이(A~H)</strong>와 <strong>각도(0°~90°)</strong> 조합으로 변환합니다.
+                💡 <strong>여성 일괄 생성</strong>: 하나의 이미지를 다양한 <strong>길이(A~H)</strong>와 <strong>각도(0°~90°)</strong> 조합으로 변환합니다.
             </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown("""
             <div class="info-box">
-                💡 <strong>남성 배치 변환</strong>: 하나의 이미지를 다양한 <strong>스타일(SF/SP/FU/PB/BZ/CP/MC)</strong>과 <strong>각도</strong> 조합으로 변환합니다.
+                💡 <strong>남성 일괄 생성</strong>: 하나의 이미지를 다양한 <strong>스타일(SF/SP/FU/PB/BZ/CP/MC)</strong>과 <strong>각도</strong> 조합으로 변환합니다.
             </div>
             """, unsafe_allow_html=True)
 
@@ -2631,7 +2631,7 @@ with tab5:
                     st.warning("스타일/Bang과 각도를 선택하세요.")
 
             generate_disabled = not batch_source_image or total_variations == 0
-            if st.button("🚀 배치 변환 시작", type="primary", disabled=generate_disabled, use_container_width=True):
+            if st.button("🚀 일괄 생성 시작", type="primary", disabled=generate_disabled, use_container_width=True):
                 st.session_state.batch_source_image = batch_source_image
 
                 item_cats = FEMALE_LENGTH_CATEGORIES if batch_gender == 'female' else MALE_STYLE_CATEGORIES
@@ -2645,7 +2645,7 @@ with tab5:
                         progress_bar.progress(progress)
                         status_text.text(f"[{current}/{total}] {message}")
 
-                with st.spinner("배치 변환 진행 중..."):
+                with st.spinner("일괄 생성 진행 중..."):
                     start_time = time.time()
 
                     if batch_gender == 'female':
