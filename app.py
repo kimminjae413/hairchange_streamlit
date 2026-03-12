@@ -481,16 +481,16 @@ FEMALE_LENGTH_CATEGORIES = {
     'H': {'name': 'Short', 'description': '픽시/숏컷 영역 - pixie/short cut', 'group': 'short'}
 }
 
-# 여성 길이 변환 규칙 (같은 그룹 또는 인접 그룹 내 변환)
+# 여성 길이 변환 규칙 (전체 크로스그룹 허용, 자기 자신 제외)
 FEMALE_LENGTH_TRANSFORM_RULES = {
-    'A': ['B', 'C'],           # Long → Long 그룹 내
-    'B': ['A', 'C'],           # Long → Long 그룹 내
-    'C': ['A', 'B'],           # Long → Long 그룹 내
-    'D': ['E', 'F', 'G'],      # Medium → Medium + Bob
-    'E': ['D', 'F', 'G'],      # Medium → Medium + Bob
-    'F': ['D', 'E', 'G'],      # Bob → Bob + Medium
-    'G': ['D', 'E', 'F'],      # Bob → Bob + Medium
-    'H': []                     # Short → 길이 고정 (뉘앙스 변형만)
+    'A': ['B', 'C', 'D', 'E', 'F', 'G', 'H'],
+    'B': ['A', 'C', 'D', 'E', 'F', 'G', 'H'],
+    'C': ['A', 'B', 'D', 'E', 'F', 'G', 'H'],
+    'D': ['A', 'B', 'C', 'E', 'F', 'G', 'H'],
+    'E': ['A', 'B', 'C', 'D', 'F', 'G', 'H'],
+    'F': ['A', 'B', 'C', 'D', 'E', 'G', 'H'],
+    'G': ['A', 'B', 'C', 'D', 'E', 'F', 'H'],
+    'H': ['A', 'B', 'C', 'D', 'E', 'F', 'G']
 }
 
 # 여성 앞머리(Bang) 카테고리
@@ -691,13 +691,17 @@ def get_male_style_info(style_code):
 # 기본 LENGTH_CATEGORIES (하위 호환성)
 LENGTH_CATEGORIES = MALE_LENGTH_CATEGORIES
 
-# 각도 옵션 정의
+# 각도 옵션 정의 (우측 → 정면 → 좌측 순서, 총 9각도)
 ANGLE_OPTIONS = {
-    '0': {'name': '정면', 'description': 'Front view - looking directly at camera'},
-    '22.5': {'name': '좌측 22.5°', 'description': 'Slight left turn - 22.5 degrees'},
-    '45': {'name': '좌측 45°', 'description': 'Quarter left turn - 45 degrees'},
-    '67.5': {'name': '좌측 67.5°', 'description': 'Three-quarter left turn - 67.5 degrees'},
-    '90': {'name': '좌측 90°', 'description': 'Left profile - 90 degrees (side view)'}
+    '-90': {'name': '우측 90°', 'description': 'Right profile - 90 degrees (side view)', 'direction': 'right'},
+    '-67.5': {'name': '우측 67.5°', 'description': 'Three-quarter right turn - 67.5 degrees', 'direction': 'right'},
+    '-45': {'name': '우측 45°', 'description': 'Quarter right turn - 45 degrees', 'direction': 'right'},
+    '-22.5': {'name': '우측 22.5°', 'description': 'Slight right turn - 22.5 degrees', 'direction': 'right'},
+    '0': {'name': '정면', 'description': 'Front view - looking directly at camera', 'direction': 'front'},
+    '22.5': {'name': '좌측 22.5°', 'description': 'Slight left turn - 22.5 degrees', 'direction': 'left'},
+    '45': {'name': '좌측 45°', 'description': 'Quarter left turn - 45 degrees', 'direction': 'left'},
+    '67.5': {'name': '좌측 67.5°', 'description': 'Three-quarter left turn - 67.5 degrees', 'direction': 'left'},
+    '90': {'name': '좌측 90°', 'description': 'Left profile - 90 degrees (side view)', 'direction': 'left'}
 }
 
 
@@ -951,11 +955,11 @@ OUTPUT: Single high-quality image showing the transformation."""
 
 def generate_angle_variation(image, target_angle, gender="female"):
     """
-    Gemini로 헤어 각도 변환 이미지 생성 (세밀한 각도 지원)
+    Gemini로 헤어 각도 변환 이미지 생성 (세밀한 각도 지원, 좌/우 방향)
 
     Args:
         image: PIL Image 객체 (원본 이미지, 정면으로 가정)
-        target_angle: 목표 각도 (0, 22.5, 45, 67.5, 90)
+        target_angle: 목표 각도 (음수=우측, 양수=좌측: -90~90)
         gender: 성별 ('male', 'female')
 
     Returns:
@@ -969,8 +973,16 @@ def generate_angle_variation(image, target_angle, gender="female"):
     if target_angle == 0:
         return image, None  # 정면이면 원본 반환
 
-    angle_key = str(target_angle) if target_angle in [22.5, 67.5] else str(int(target_angle))
-    angle_info = ANGLE_OPTIONS.get(angle_key, ANGLE_OPTIONS['45'])
+    abs_angle = abs(target_angle)
+    direction = "RIGHT" if target_angle < 0 else "LEFT"
+    direction_kr = "우측" if target_angle < 0 else "좌측"
+
+    angle_key = str(target_angle)
+    angle_info = ANGLE_OPTIONS.get(angle_key, {})
+    if not angle_info:
+        # fallback for legacy keys
+        fallback_key = str(abs_angle) if abs_angle in [22.5, 67.5] else str(int(abs_angle))
+        angle_info = ANGLE_OPTIONS.get(fallback_key, ANGLE_OPTIONS.get('45', {}))
 
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
@@ -978,7 +990,7 @@ def generate_angle_variation(image, target_angle, gender="female"):
         prompt = f"""[CAMERA ANGLE ROTATION TASK]
 
 The source image shows a person from the FRONT VIEW (0°).
-Rotate the camera {target_angle}° to the LEFT to show the person from {angle_info['name']} view.
+Rotate the camera {abs_angle}° to the {direction} to show the person from {angle_info.get('name', f'{direction_kr} {abs_angle}°')} view.
 
 ⚠️ ABSOLUTE RULES - DO NOT VIOLATE:
 1. FACE: Keep the EXACT same face. Same eyes, nose, lips, skin tone, facial structure. NO changes.
@@ -988,20 +1000,20 @@ Rotate the camera {target_angle}° to the LEFT to show the person from {angle_in
 5. LIGHTING: Keep consistent professional studio lighting from similar direction.
 
 📐 CAMERA ROTATION DETAILS:
-- Target angle: {target_angle}° to the left
-- View name: {angle_info['name']}
-- Description: {angle_info['description']}
+- Target angle: {abs_angle}° to the {direction}
+- View name: {angle_info.get('name', f'{direction_kr} {abs_angle}°')}
+- Description: {angle_info.get('description', '')}
 
 🎯 ANGLE-SPECIFIC GUIDANCE:
-{"- Slight turn: Face mostly visible, slight angle to the left" if target_angle == 22.5 else ""}
-{"- Quarter turn: Face at 45° angle, both eyes may still be visible" if target_angle == 45 else ""}
-{"- Three-quarter turn: Face mostly turned, showing more of the side profile" if target_angle == 67.5 else ""}
-{"- Full profile: Complete side view, showing left ear, one eye visible" if target_angle == 90 else ""}
+{"- Slight turn: Face mostly visible, slight angle to the " + direction.lower() if abs_angle == 22.5 else ""}
+{"- Quarter turn: Face at 45° angle, showing " + direction.lower() + " side more" if abs_angle == 45 else ""}
+{"- Three-quarter turn: Face mostly turned to the " + direction.lower() + ", showing more of the side profile" if abs_angle == 67.5 else ""}
+{"- Full profile: Complete side view showing the " + direction.lower() + " side, one eye visible" if abs_angle == 90 else ""}
 
 This is NOT creative generation. This is a STRICT camera rotation task.
-The output must look like a photo of the SAME person taken from {target_angle}° left angle.
+The output must look like a photo of the SAME person taken from {abs_angle}° {direction.lower()} angle.
 
-OUTPUT: Single high-quality image showing the {angle_info['name']} view of this exact person."""
+OUTPUT: Single high-quality image showing the {angle_info.get('name', f'{direction_kr} {abs_angle}°')} view of this exact person."""
 
         response = client.models.generate_content(
             model="gemini-3-pro-image-preview",
@@ -1030,10 +1042,88 @@ OUTPUT: Single high-quality image showing the {angle_info['name']} view of this 
             return None, f"각도 변환 실패: {error_msg}"
 
 
+def generate_bang_variation(image, style_code, source_bang, target_bang, gender="male"):
+    """같은 스타일 내에서 앞머리 길이만 변경 (남성 Bang 스왑)"""
+    if not GEMINI_API_KEY:
+        return None, "Gemini API 키가 설정되지 않았습니다."
+
+    if source_bang == target_bang:
+        return image, None
+
+    style_info = MALE_STYLE_CATEGORIES.get(style_code, {})
+    source_bang_info = MALE_BANG_CATEGORIES.get(source_bang, {})
+    target_bang_info = MALE_BANG_CATEGORIES.get(target_bang, {})
+
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+
+        prompt = f"""[MALE BANG LENGTH SWAP TASK - Hairgator Men's System]
+
+You are given an image of a male with {style_info.get('name', style_code)} hairstyle.
+Your task is to ONLY change the BANG (fringe/앞머리) LENGTH while keeping the EXACT same style category.
+
+⚠️ ABSOLUTE RULES - DO NOT VIOLATE:
+1. FACE: Keep the EXACT same face. Same eyes, nose, lips, skin tone, facial structure. NO changes.
+2. HAIRSTYLE CATEGORY: Must remain {style_code} ({style_info.get('name', '')}). Do NOT change the overall style.
+3. HAIR COLOR: Keep the EXACT same hair color.
+4. SIDES & BACK: Keep the EXACT same side and back hair.
+5. CLOTHES & BACKGROUND: Keep exactly the same.
+
+💇 BANG TRANSFORMATION:
+- FROM: {source_bang} — {source_bang_info.get('name', '')} ({source_bang_info.get('description', '')})
+- TO: {target_bang} — {target_bang_info.get('name', '')} ({target_bang_info.get('description', '')})
+
+📋 BANG POSITION REFERENCE (anatomical landmarks):
+- B0 (None): No bangs, forehead fully exposed, hair swept back or parted
+- B1 (Fore Head): Bangs reach the MIDDLE of the forehead — above eyebrows, short fringe
+- B2 (Eye Brow): Bangs reach the EYEBROW line — touching or just covering eyebrows
+- B3 (Eye): Bangs reach the EYE level — covering eyes partially, longer fringe
+- B4 (Cheekbone): Bangs reach the CHEEKBONE — very long fringe past eyes
+
+📋 STYLE-SPECIFIC CONTEXT ({style_code}):
+- Style: {style_info.get('description', '')}
+- Nuance points: {', '.join(style_info.get('nuance_points', []))}
+
+🎯 KEY INSTRUCTION:
+ONLY modify the front bangs/fringe area. The rest of the hairstyle (top, sides, back, volume, texture) must remain IDENTICAL.
+The bang length change should look natural for the {style_info.get('name', '')} style.
+
+OUTPUT: Single high-quality image with ONLY the bang length changed."""
+
+        response = client.models.generate_content(
+            model="gemini-3-pro-image-preview",
+            contents=[prompt, image],
+            config=types.GenerateContentConfig(
+                response_modalities=['IMAGE', 'TEXT']
+            )
+        )
+
+        if response.candidates and response.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'inline_data') and part.inline_data is not None:
+                    image_data = part.inline_data.data
+                    generated_image = Image.open(io.BytesIO(image_data))
+                    return generated_image, None
+
+        return None, "Gemini 응답에 이미지가 없습니다."
+
+    except Exception as e:
+        error_msg = str(e)
+        if "SAFETY" in error_msg.upper() or "BLOCKED" in error_msg.upper():
+            return None, "안전 필터에 의해 차단됨"
+        elif "QUOTA" in error_msg.upper() or "RATE" in error_msg.upper():
+            return None, "API 할당량 초과"
+        else:
+            return None, f"Bang 변환 실패: {error_msg}"
+
+
 def generate_batch_variations(image, source_length, target_items, target_angles, gender="female", progress_callback=None,
-                              bang=None, curl=None, male_style=None, target_male_style=None, item_categories=None):
+                              bang=None, curl=None, bangs=None, curls=None, male_style=None, target_male_style=None,
+                              item_categories=None, target_bangs=None):
     """
-    배치로 변환 이미지 생성 (여성: 길이×각도, 남성: 스타일×각도)
+    배치로 변환 이미지 생성
+    - 여성: 길이 x 각도 x 앞머리 x 컬 (4차원)
+    - 남성: (Bang 스왑 + 스타일 변환) x 각도
 
     Args:
         image: PIL Image 객체 (원본 이미지)
@@ -1042,15 +1132,18 @@ def generate_batch_variations(image, source_length, target_items, target_angles,
         target_angles: 목표 각도 리스트 [0, 22.5, 45, ...]
         gender: 성별
         progress_callback: 진행 상황 콜백 함수(current, total, message)
-        bang: 앞머리 타입 (B0-B4)
-        curl: 컬 타입 (여성용)
+        bang: 앞머리 타입 (B0-B4) - 단일 선택 (하위 호환)
+        curl: 컬 타입 (여성용) - 단일 선택 (하위 호환)
+        bangs: 앞머리 리스트 (여성 복수 선택)
+        curls: 컬 리스트 (여성 복수 선택)
         male_style: 현재 남성 스타일 카테고리
         target_male_style: 목표 남성 스타일 카테고리
-        item_categories: 표시용 카테고리 dict (여성: FEMALE_LENGTH_CATEGORIES / 남성: MALE_STYLE_CATEGORIES)
+        item_categories: 표시용 카테고리 dict
+        target_bangs: 남성 Bang 스왑 대상 리스트
 
     Returns:
-        dict: {(item, angle): image} 결과 딕셔너리
-        dict: {(item, angle): error} 에러 딕셔너리
+        dict: {key: image} 결과 딕셔너리 (key는 2-tuple 또는 4-tuple)
+        dict: {key: error} 에러 딕셔너리
     """
     if item_categories is None:
         item_categories = FEMALE_LENGTH_CATEGORIES if gender == 'female' else MALE_STYLE_CATEGORIES
@@ -1060,43 +1153,166 @@ def generate_batch_variations(image, source_length, target_items, target_angles,
     is_male = gender == 'male'
     label = "스타일" if is_male else "길이"
 
-    total_tasks = len(target_items) * len(target_angles)
-    current_task = 0
+    def _angle_key(angle):
+        return str(angle) if angle in [22.5, 67.5, -22.5, -67.5] else str(int(angle))
 
-    for item in target_items:
-        item_name = item_categories.get(item, {}).get('name', item)
+    def _angle_name(angle):
+        return ANGLE_OPTIONS.get(_angle_key(angle), {}).get('name', f'{angle}°')
 
-        if progress_callback:
-            progress_callback(current_task, total_tasks, f"{label} 변환 중: {item_name}")
+    # Female: bang/curl matrix (4차원)
+    if gender == 'female' and bangs and curls:
+        total_tasks = len(target_items) * len(target_angles) * len(bangs) * len(curls)
+        current_task = 0
 
-        item_image, item_error = generate_length_variation(
-            image, source_length, item, gender,
-            bang=bang, curl=curl, male_style=male_style, target_male_style=target_male_style
-        )
+        for item in target_items:
+            item_name = item_categories.get(item, {}).get('name', item)
 
-        if item_error and item != source_length:
-            for angle in target_angles:
-                errors[(item, angle)] = item_error
-                current_task += 1
-            continue
+            for b in bangs:
+                for c in curls:
+                    bang_name = FEMALE_BANG_CATEGORIES.get(b, {}).get('name', b)
+                    curl_name = FEMALE_CURL_TYPES.get(c, {}).get('name', c)
 
-        base_image = item_image if item_image else image
+                    if progress_callback:
+                        progress_callback(current_task, total_tasks, f"{item_name} + {bang_name} + {curl_name}")
 
-        for angle in target_angles:
-            current_task += 1
+                    item_image, item_error = generate_length_variation(
+                        image, source_length, item, gender,
+                        bang=b, curl=c, male_style=male_style, target_male_style=target_male_style
+                    )
+
+                    if item_error and item != source_length:
+                        for angle in target_angles:
+                            errors[(item, str(angle), b, c)] = item_error
+                            current_task += 1
+                        continue
+
+                    base_image = item_image if item_image else image
+
+                    for angle in target_angles:
+                        current_task += 1
+                        if progress_callback:
+                            progress_callback(current_task, total_tasks, f"{item_name} + {bang_name} + {curl_name} + {_angle_name(angle)}")
+
+                        angle_image, angle_error = generate_angle_variation(base_image, angle, gender)
+
+                        if angle_error:
+                            errors[(item, str(angle), b, c)] = angle_error
+                        else:
+                            results[(item, str(angle), b, c)] = angle_image
+
+                        time.sleep(0.5)
+
+    # Male: bang swap + style swap
+    elif gender == 'male' and target_bangs:
+        total_tasks = (len(target_bangs) + len(target_items)) * len(target_angles)
+        current_task = 0
+
+        # Phase 1: Bang swaps (same style, different bangs)
+        for target_bang in target_bangs:
+            bang_name = MALE_BANG_CATEGORIES.get(target_bang, {}).get('name', target_bang)
 
             if progress_callback:
-                angle_name = ANGLE_OPTIONS.get(str(angle), ANGLE_OPTIONS.get(str(int(angle)) if angle == int(angle) else '45', {})).get('name', f'{angle}°')
-                progress_callback(current_task, total_tasks, f"{item_name} + {angle_name}")
+                progress_callback(current_task, total_tasks, f"Bang 스왑: {bang_name}")
 
-            angle_image, angle_error = generate_angle_variation(base_image, angle, gender)
+            bang_image, bang_error = generate_bang_variation(
+                image, male_style, bang, target_bang
+            )
 
-            if angle_error:
-                errors[(item, str(angle))] = angle_error
-            else:
-                results[(item, str(angle))] = angle_image
+            if bang_error:
+                for angle in target_angles:
+                    errors[(f"{male_style}_{target_bang}", str(angle))] = bang_error
+                    current_task += 1
+                continue
 
-            time.sleep(0.5)
+            base_image = bang_image if bang_image else image
+
+            for angle in target_angles:
+                current_task += 1
+                if progress_callback:
+                    progress_callback(current_task, total_tasks, f"{male_style}+{bang_name} + {_angle_name(angle)}")
+
+                angle_image, angle_error = generate_angle_variation(base_image, angle, gender)
+
+                if angle_error:
+                    errors[(f"{male_style}_{target_bang}", str(angle))] = angle_error
+                else:
+                    results[(f"{male_style}_{target_bang}", str(angle))] = angle_image
+
+                time.sleep(0.5)
+
+        # Phase 2: Style swaps (existing logic)
+        for item in target_items:
+            if item == male_style:
+                continue
+            item_name = item_categories.get(item, {}).get('name', item)
+
+            if progress_callback:
+                progress_callback(current_task, total_tasks, f"스타일 변환: {item_name}")
+
+            item_image, item_error = generate_length_variation(
+                image, source_length, item, gender,
+                bang=bang, curl=curl, male_style=male_style, target_male_style=target_male_style
+            )
+
+            if item_error:
+                for angle in target_angles:
+                    errors[(item, str(angle))] = item_error
+                    current_task += 1
+                continue
+
+            base_image = item_image if item_image else image
+
+            for angle in target_angles:
+                current_task += 1
+                if progress_callback:
+                    progress_callback(current_task, total_tasks, f"{item_name} + {_angle_name(angle)}")
+
+                angle_image, angle_error = generate_angle_variation(base_image, angle, gender)
+
+                if angle_error:
+                    errors[(item, str(angle))] = angle_error
+                else:
+                    results[(item, str(angle))] = angle_image
+
+                time.sleep(0.5)
+
+    else:
+        # Legacy/fallback: original 2D logic (items x angles)
+        total_tasks = len(target_items) * len(target_angles)
+        current_task = 0
+
+        for item in target_items:
+            item_name = item_categories.get(item, {}).get('name', item)
+
+            if progress_callback:
+                progress_callback(current_task, total_tasks, f"{label} 변환 중: {item_name}")
+
+            item_image, item_error = generate_length_variation(
+                image, source_length, item, gender,
+                bang=bang, curl=curl, male_style=male_style, target_male_style=target_male_style
+            )
+
+            if item_error and item != source_length:
+                for angle in target_angles:
+                    errors[(item, str(angle))] = item_error
+                    current_task += 1
+                continue
+
+            base_image = item_image if item_image else image
+
+            for angle in target_angles:
+                current_task += 1
+                if progress_callback:
+                    progress_callback(current_task, total_tasks, f"{item_name} + {_angle_name(angle)}")
+
+                angle_image, angle_error = generate_angle_variation(base_image, angle, gender)
+
+                if angle_error:
+                    errors[(item, str(angle))] = angle_error
+                else:
+                    results[(item, str(angle))] = angle_image
+
+                time.sleep(0.5)
 
     return results, errors
 
@@ -2173,21 +2389,29 @@ with tab5:
                 )
 
                 st.subheader("3️⃣ 추가 옵션")
-                st.markdown("**💇 앞머리 (Bang)**")
-                selected_bang = st.selectbox(
-                    "현재 앞머리",
+                st.markdown("**💇 앞머리 (Bang) — 복수 선택 가능**")
+                selected_bangs = st.multiselect(
+                    "생성할 앞머리 타입",
                     list(FEMALE_BANG_CATEGORIES.keys()),
+                    default=['B0'],
                     format_func=lambda x: f"{x}: {FEMALE_BANG_CATEGORIES[x]['name']} — {FEMALE_BANG_CATEGORIES[x]['description']}",
-                    key="batch_female_bang"
+                    key="batch_female_bangs"
                 )
+                if not selected_bangs:
+                    selected_bangs = ['B0']
+                selected_bang = selected_bangs[0]  # backward compat for single-bang code paths
 
-                st.markdown("**🌀 컬 타입 (Curl)**")
-                selected_curl = st.selectbox(
-                    "현재 컬",
+                st.markdown("**🌀 컬 타입 (Curl) — 복수 선택 가능**")
+                selected_curls = st.multiselect(
+                    "생성할 컬 타입",
                     list(FEMALE_CURL_TYPES.keys()),
+                    default=['Straight'],
                     format_func=lambda x: f"{FEMALE_CURL_TYPES[x]['name']} — {FEMALE_CURL_TYPES[x]['description']}",
-                    key="batch_female_curl"
+                    key="batch_female_curls"
                 )
+                if not selected_curls:
+                    selected_curls = ['Straight']
+                selected_curl = selected_curls[0]  # backward compat
 
                 # 변환 가능 길이 안내
                 allowed = FEMALE_LENGTH_TRANSFORM_RULES.get(source_item, [])
@@ -2207,21 +2431,48 @@ with tab5:
                 )
                 source_item = selected_male_style
 
-                # 변환 가능 스타일 안내
-                swap_options = get_male_style_swap_options(selected_male_style)
-                if swap_options:
-                    st.caption(f"변환 가능: {selected_male_style}(현재), {', '.join(swap_options)}")
-                else:
-                    st.caption(f"{selected_male_style}는 다른 스타일로 변환이 제한됩니다.")
-
                 st.subheader("3️⃣ 추가 옵션")
-                st.markdown("**💇 앞머리 (Bang)**")
+                st.markdown("**💇 현재 앞머리 (Bang)**")
                 selected_bang = st.selectbox(
                     "현재 앞머리",
                     list(MALE_BANG_CATEGORIES.keys()),
                     format_func=lambda x: f"{x}: {MALE_BANG_CATEGORIES[x]['name']} — {MALE_BANG_CATEGORIES[x]['description']}",
                     key="batch_male_bang"
                 )
+
+                # Bang swap options based on style's bang_swap rules
+                style_info = MALE_STYLE_CATEGORIES[selected_male_style]
+                bang_swap_rules = style_info.get('bang_swap', {})
+
+                # Map B-code to internal key
+                bang_code_to_key = {'B0': 'NONE', 'B1': 'FOREHEAD', 'B2': 'EYEBROW', 'B3': 'EYE', 'B4': 'CHEEKBONE'}
+                bang_key_to_code = {v: k for k, v in bang_code_to_key.items()}
+
+                current_bang_key = bang_code_to_key.get(selected_bang, 'NONE')
+                swappable_keys = bang_swap_rules.get(current_bang_key, [])
+                swappable_codes = [bang_key_to_code[k] for k in swappable_keys if k in bang_key_to_code]
+
+                if swappable_codes:
+                    st.markdown("**🔄 앞머리 스왑 (Bang Swap)**")
+                    st.caption(f"{selected_male_style} 스타일에서 {selected_bang} → 변환 가능한 앞머리:")
+                    selected_target_bangs = st.multiselect(
+                        "생성할 앞머리",
+                        swappable_codes,
+                        default=swappable_codes,
+                        format_func=lambda x: f"{x}: {MALE_BANG_CATEGORIES[x]['name']}",
+                        key="batch_male_target_bangs"
+                    )
+                else:
+                    selected_target_bangs = []
+                    if selected_male_style == 'BZ':
+                        st.info("ℹ️ BUZZ 스타일은 Bang 스왑 없이 페이드/질감 뉘앙스 변주만 생성합니다.")
+                    else:
+                        st.caption(f"{selected_male_style}의 {selected_bang}에서는 Bang 스왑이 제한됩니다.")
+
+                # 변환 가능 스타일 안내 (기존 유지)
+                swap_options = get_male_style_swap_options(selected_male_style)
+                if swap_options:
+                    st.caption(f"스타일 변환 가능: {', '.join(swap_options)}")
 
         with col_right:
             st.subheader("4️⃣ 변환 옵션 선택")
@@ -2230,7 +2481,7 @@ with tab5:
 
             with col_items:
                 if batch_gender == 'female':
-                    # ===== 여성: 길이 체크박스 (변환 규칙 적용) =====
+                    # ===== 여성: 길이 체크박스 (그룹별 구분) =====
                     st.markdown("**📏 길이 변환**")
 
                     btn_col = st.container()
@@ -2240,27 +2491,43 @@ with tab5:
                         if st.button("❌ 전체 해제", key="flen_none", use_container_width=True):
                             st.session_state.flen_select_all = False
 
-                    # 현재 길이 + 변환 규칙에 따른 허용 길이만 표시
+                    # 전체 A~H 표시 (그룹별 구분)
                     allowed_lengths = [source_item] + FEMALE_LENGTH_TRANSFORM_RULES.get(source_item, [])
                     selected_items = []
 
-                    for key in allowed_lengths:
-                        if key in FEMALE_LENGTH_CATEGORIES:
-                            info = FEMALE_LENGTH_CATEGORIES[key]
-                            default_val = getattr(st.session_state, 'flen_select_all', False) or key == source_item
-                            if st.checkbox(
-                                f"{key}: {info['name']} — {info['description'][:20]}",
-                                value=default_val,
-                                key=f"flen_{key}"
-                            ):
-                                selected_items.append(key)
+                    # 그룹별 표시
+                    groups = [
+                        ('🔵 롱 그룹', ['A', 'B', 'C']),
+                        ('🟢 미디엄·밥 그룹', ['D', 'E', 'F', 'G']),
+                        ('🟠 숏 그룹', ['H'])
+                    ]
 
-                    if not FEMALE_LENGTH_TRANSFORM_RULES.get(source_item, []):
-                        st.info("ℹ️ H(Short)는 길이 변환 없이 뉘앙스 변형만 가능합니다.")
+                    for group_name, group_keys in groups:
+                        group_items = [k for k in group_keys if k in allowed_lengths]
+                        if group_items:
+                            st.caption(group_name)
+                            for key in group_items:
+                                info = FEMALE_LENGTH_CATEGORIES[key]
+                                is_source = key == source_item
+                                default_val = getattr(st.session_state, 'flen_select_all', False) or is_source
+                                label = f"{'⭐ ' if is_source else ''}{key}: {info['name']} — {info['description'][:30]}"
+                                if st.checkbox(label, value=default_val, key=f"flen_{key}"):
+                                    selected_items.append(key)
+
+                    if source_item == 'H':
+                        st.info("ℹ️ H(Short)는 뉘앙스 변형 중심입니다. 다른 길이로도 변환 가능합니다.")
 
                 else:
-                    # ===== 남성: 스타일 체크박스 (swap 규칙 적용) =====
-                    st.markdown("**💈 스타일 변환**")
+                    # ===== 남성: Bang 스왑 + 스타일 변환 =====
+
+                    # Bang 스왑 표시 (이미 선택된 target_bangs 사용)
+                    if selected_target_bangs:
+                        st.markdown(f"**💇 Bang 스왑** ({len(selected_target_bangs)}개)")
+                        for tb in selected_target_bangs:
+                            st.caption(f"  • {tb}: {MALE_BANG_CATEGORIES[tb]['name']}")
+
+                    # 스타일 간 변환 (기존 기능 유지)
+                    st.markdown("**💈 스타일 변환 (선택적)**")
 
                     btn_col = st.container()
                     with btn_col:
@@ -2269,7 +2536,6 @@ with tab5:
                         if st.button("❌ 전체 해제", key="mstyle_none", use_container_width=True):
                             st.session_state.mstyle_select_all = False
 
-                    # 현재 스타일 + swap 가능 스타일만 표시
                     swap_list = get_male_style_swap_options(selected_male_style)
                     available_styles = [selected_male_style] + swap_list
                     selected_items = []
@@ -2288,6 +2554,21 @@ with tab5:
             with col_ang:
                 st.markdown("**📐 각도 변환**")
 
+                angle_mode = st.radio(
+                    "각도 범위",
+                    ["좌측만 (5각도)", "우측만 (5각도)", "양측 전체 (9각도)"],
+                    key="angle_mode",
+                    horizontal=True
+                )
+
+                # 모드에 따른 필터링
+                if angle_mode == "좌측만 (5각도)":
+                    filtered_angles = {k: v for k, v in ANGLE_OPTIONS.items() if float(k) >= 0}
+                elif angle_mode == "우측만 (5각도)":
+                    filtered_angles = {k: v for k, v in ANGLE_OPTIONS.items() if float(k) <= 0}
+                else:
+                    filtered_angles = ANGLE_OPTIONS
+
                 btn_col2 = st.container()
                 with btn_col2:
                     if st.button("✅ 전체 선택", key="ang_all", use_container_width=True):
@@ -2296,7 +2577,7 @@ with tab5:
                         st.session_state.ang_select_all = False
 
                 selected_angles = []
-                for key, info in ANGLE_OPTIONS.items():
+                for key, info in filtered_angles.items():
                     default_val = getattr(st.session_state, 'ang_select_all', False) or key == '0'
                     if st.checkbox(
                         f"{info['name']} ({key}°)",
@@ -2306,51 +2587,98 @@ with tab5:
                         selected_angles.append(float(key))
 
             # ========== 예상 결과 + 생성 버튼 ==========
-            total_variations = len(selected_items) * len(selected_angles)
             st.divider()
 
-            if total_variations > 0:
-                item_label = "스타일" if batch_gender == "male" else "길이"
-                st.info(f"""
-                📊 **예상 결과**: {len(selected_items)}개 {item_label} × {len(selected_angles)}개 각도 = **{total_variations}장**
-                ⏱️ **예상 시간**: 약 {total_variations * 15}~{total_variations * 30}초
-                💰 **API 사용**: Gemini API {total_variations}회 호출
-                """)
-            else:
-                item_label = "스타일" if batch_gender == "male" else "길이"
-                st.warning(f"{item_label}과 각도를 각각 1개 이상 선택하세요.")
+            # Calculate total variations
+            if batch_gender == 'female':
+                n_bangs = len(selected_bangs) if 'selected_bangs' in dir() else 1
+                n_curls = len(selected_curls) if 'selected_curls' in dir() else 1
+                total_variations = len(selected_items) * len(selected_angles) * n_bangs * n_curls
+
+                if total_variations > 0:
+                    st.info(f"""
+                    📊 **예상 결과**: {len(selected_items)}개 길이 × {len(selected_angles)}개 각도 × {n_bangs}개 앞머리 × {n_curls}개 컬 = **{total_variations}장**
+                    ⏱️ **예상 시간**: 약 {total_variations * 8}~{total_variations * 15}초 (~{total_variations * 12 // 60}분)
+                    💰 **API 사용**: Gemini API {total_variations}회 호출
+                    """)
+                    if total_variations > 50:
+                        st.warning("⚠️ 50장 이상 생성 시 API 할당량 초과 가능. 옵션을 줄여보세요.")
+                else:
+                    st.warning("길이와 각도를 각각 1개 이상 선택하세요.")
+
+            elif batch_gender == 'male':
+                n_target_bangs = len(selected_target_bangs) if 'selected_target_bangs' in dir() else 0
+                n_style_swaps = len([s for s in selected_items if s != selected_male_style])
+                total_bang_images = n_target_bangs * len(selected_angles)
+                total_style_images = n_style_swaps * len(selected_angles)
+                total_variations = total_bang_images + total_style_images + len(selected_angles)  # +source
+
+                if total_variations > 0:
+                    parts = []
+                    if n_target_bangs > 0:
+                        parts.append(f"Bang 스왑 {n_target_bangs}개 × {len(selected_angles)}각도 = {total_bang_images}장")
+                    if n_style_swaps > 0:
+                        parts.append(f"스타일 변환 {n_style_swaps}개 × {len(selected_angles)}각도 = {total_style_images}장")
+                    parts.append(f"원본 × {len(selected_angles)}각도 = {len(selected_angles)}장")
+
+                    st.info(f"""
+                    📊 **예상 결과**: **{total_variations}장**
+                    {chr(10).join(['  • ' + p for p in parts])}
+                    ⏱️ **예상 시간**: 약 {total_variations * 8}~{total_variations * 15}초
+                    💰 **API 사용**: Gemini API {total_variations}회 호출
+                    """)
+                else:
+                    st.warning("스타일/Bang과 각도를 선택하세요.")
 
             generate_disabled = not batch_source_image or total_variations == 0
             if st.button("🚀 배치 변환 시작", type="primary", disabled=generate_disabled, use_container_width=True):
                 st.session_state.batch_source_image = batch_source_image
 
-                # 카테고리 dict 결정
                 item_cats = FEMALE_LENGTH_CATEGORIES if batch_gender == 'female' else MALE_STYLE_CATEGORIES
 
                 progress_bar = st.progress(0)
                 status_text = st.empty()
 
                 def update_progress(current, total, message):
-                    progress = current / total
-                    progress_bar.progress(progress)
-                    status_text.text(f"[{current}/{total}] {message}")
+                    if total > 0:
+                        progress = min(current / total, 1.0)
+                        progress_bar.progress(progress)
+                        status_text.text(f"[{current}/{total}] {message}")
 
                 with st.spinner("배치 변환 진행 중..."):
                     start_time = time.time()
 
-                    results, errors = generate_batch_variations(
-                        batch_source_image,
-                        source_item,
-                        selected_items,
-                        selected_angles,
-                        batch_gender,
-                        update_progress,
-                        bang=selected_bang,
-                        curl=selected_curl,
-                        male_style=selected_male_style,
-                        target_male_style=target_male_style,
-                        item_categories=item_cats
-                    )
+                    if batch_gender == 'female':
+                        results, errors = generate_batch_variations(
+                            batch_source_image,
+                            source_item,
+                            selected_items,
+                            selected_angles,
+                            batch_gender,
+                            update_progress,
+                            bang=selected_bang,
+                            curl=selected_curl,
+                            bangs=selected_bangs if len(selected_bangs) > 1 else None,
+                            curls=selected_curls if len(selected_curls) > 1 else None,
+                            male_style=None,
+                            target_male_style=None,
+                            item_categories=item_cats
+                        )
+                    else:
+                        results, errors = generate_batch_variations(
+                            batch_source_image,
+                            source_item,
+                            selected_items,
+                            selected_angles,
+                            batch_gender,
+                            update_progress,
+                            bang=selected_bang,
+                            curl=None,
+                            male_style=selected_male_style,
+                            target_male_style=None,
+                            item_categories=item_cats,
+                            target_bangs=selected_target_bangs if selected_target_bangs else None
+                        )
 
                     processing_time = time.time() - start_time
 
@@ -2377,6 +2705,7 @@ with tab5:
         results = st.session_state.batch_results
         errors = st.session_state.batch_errors or {}
         item_cats = getattr(st.session_state, 'batch_item_categories', FEMALE_LENGTH_CATEGORIES)
+        batch_gender_val = st.session_state.get('batch_gender', 'female')
 
         if st.session_state.batch_source_image:
             st.markdown("**📷 원본 이미지**")
@@ -2384,36 +2713,81 @@ with tab5:
 
         st.markdown("**📊 변환 결과 그리드**")
 
-        items_in_results = sorted(set(k[0] for k in results.keys()))
-        angles_in_results = sorted(set(float(k[1]) for k in results.keys()))
+        def _angle_key_display(angle):
+            return str(angle) if angle in [22.5, 67.5, -22.5, -67.5] else str(int(angle))
 
-        # 헤더 행 (각도)
-        header_cols = st.columns([1] + [1] * len(angles_in_results))
-        row_label = "스타일" if st.session_state.get('batch_gender', 'female') == 'male' else "길이"
-        header_cols[0].markdown(f"**{row_label} \\ 각도**")
-        for i, angle in enumerate(angles_in_results):
-            angle_key = str(angle) if angle in [22.5, 67.5] else str(int(angle))
-            angle_name = ANGLE_OPTIONS.get(angle_key, {}).get('name', f'{angle}°')
-            header_cols[i + 1].markdown(f"**{angle_name}**")
+        # Detect key format
+        sample_key = next(iter(results.keys())) if results else None
+        is_4tuple = sample_key and len(sample_key) == 4  # (item, angle, bang, curl)
 
-        # 데이터 행
-        for item in items_in_results:
-            row_cols = st.columns([1] + [1] * len(angles_in_results))
-            item_name = item_cats.get(item, {}).get('name', item)
-            row_cols[0].markdown(f"**{item}: {item_name}**")
+        if is_4tuple:
+            # Female multi-bang/curl: group by bang+curl combination
+            bang_curl_combos = sorted(set((k[2], k[3]) for k in results.keys()))
 
+            for bang_code, curl_code in bang_curl_combos:
+                bang_name = FEMALE_BANG_CATEGORIES.get(bang_code, {}).get('name', bang_code)
+                curl_name = FEMALE_CURL_TYPES.get(curl_code, {}).get('name', curl_code)
+                st.markdown(f"### 💇 {bang_name} + 🌀 {curl_name}")
+
+                # Filter results for this bang+curl combo
+                filtered = {(k[0], k[1]): v for k, v in results.items() if k[2] == bang_code and k[3] == curl_code}
+                filtered_errors = {(k[0], k[1]): v for k, v in errors.items() if len(k) == 4 and k[2] == bang_code and k[3] == curl_code}
+
+                if filtered:
+                    items_in = sorted(set(k[0] for k in filtered.keys()))
+                    angles_in = sorted(set(float(k[1]) for k in filtered.keys()))
+
+                    header_cols = st.columns([1] + [1] * len(angles_in))
+                    header_cols[0].markdown("**길이 \\ 각도**")
+                    for i, angle in enumerate(angles_in):
+                        akey = _angle_key_display(angle)
+                        aname = ANGLE_OPTIONS.get(akey, {}).get('name', f'{angle}°')
+                        header_cols[i + 1].markdown(f"**{aname}**")
+
+                    for item in items_in:
+                        row_cols = st.columns([1] + [1] * len(angles_in))
+                        item_name = item_cats.get(item, {}).get('name', item)
+                        row_cols[0].markdown(f"**{item}: {item_name}**")
+
+                        for i, angle in enumerate(angles_in):
+                            akey = _angle_key_display(angle)
+                            key = (item, akey)
+                            if key in filtered and filtered[key]:
+                                row_cols[i + 1].image(filtered[key], use_container_width=True)
+                            elif key in filtered_errors:
+                                row_cols[i + 1].error(f"❌ {filtered_errors[key][:20]}...")
+                            else:
+                                row_cols[i + 1].info("—")
+        else:
+            # 2-tuple: original display (items x angles)
+            items_in_results = sorted(set(k[0] for k in results.keys()))
+            angles_in_results = sorted(set(float(k[1]) for k in results.keys()))
+
+            header_cols = st.columns([1] + [1] * len(angles_in_results))
+            row_label = "스타일" if batch_gender_val == 'male' else "길이"
+            header_cols[0].markdown(f"**{row_label} \\ 각도**")
             for i, angle in enumerate(angles_in_results):
-                angle_key = str(angle) if angle in [22.5, 67.5] else str(int(angle))
-                key = (item, angle_key)
+                angle_key = _angle_key_display(angle)
+                angle_name = ANGLE_OPTIONS.get(angle_key, {}).get('name', f'{angle}°')
+                header_cols[i + 1].markdown(f"**{angle_name}**")
 
-                if key in results and results[key]:
-                    row_cols[i + 1].image(results[key], use_container_width=True)
-                elif key in errors:
-                    row_cols[i + 1].error(f"❌ {errors[key][:20]}...")
-                else:
-                    row_cols[i + 1].info("—")
+            for item in items_in_results:
+                row_cols = st.columns([1] + [1] * len(angles_in_results))
+                item_name = item_cats.get(item, {}).get('name', item)
+                row_cols[0].markdown(f"**{item}: {item_name}**")
 
-        # 일괄 다운로드
+                for i, angle in enumerate(angles_in_results):
+                    angle_key = _angle_key_display(angle)
+                    key = (item, angle_key)
+
+                    if key in results and results[key]:
+                        row_cols[i + 1].image(results[key], use_container_width=True)
+                    elif key in errors:
+                        row_cols[i + 1].error(f"❌ {errors[key][:20]}...")
+                    else:
+                        row_cols[i + 1].info("—")
+
+        # ZIP download section
         st.divider()
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
@@ -2421,12 +2795,17 @@ with tab5:
                 zip_buffer = io.BytesIO()
                 import zipfile
                 with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                    for (item, angle), img in results.items():
+                    for key, img in results.items():
                         if img:
                             img_buffer = io.BytesIO()
                             img.save(img_buffer, format='PNG', quality=95)
                             img_buffer.seek(0)
-                            filename = f"hair_{item}_{angle}deg.png"
+                            if len(key) == 4:
+                                item, angle, bang, curl = key
+                                filename = f"hair_{item}_{angle}deg_{bang}_{curl}.png"
+                            else:
+                                item, angle = key
+                                filename = f"hair_{item}_{angle}deg.png"
                             zip_file.writestr(filename, img_buffer.getvalue())
 
                 zip_buffer.seek(0)
@@ -2444,9 +2823,15 @@ with tab5:
         # 에러 상세
         if errors:
             with st.expander(f"❌ 에러 상세 정보 ({len(errors)}건)"):
-                for (item, angle), error_msg in errors.items():
-                    item_name = item_cats.get(item, {}).get('name', item)
-                    st.error(f"**{item_name} + {angle}°**: {error_msg}")
+                for key, error_msg in errors.items():
+                    if len(key) == 4:
+                        item, angle, bang, curl = key
+                        item_name = item_cats.get(item, {}).get('name', item)
+                        st.error(f"**{item_name} + {angle}° + {bang} + {curl}**: {error_msg}")
+                    else:
+                        item, angle = key
+                        item_name = item_cats.get(item, {}).get('name', item)
+                        st.error(f"**{item_name} + {angle}°**: {error_msg}")
 
 with tab4:
     st.header("📝 처리 기록")
