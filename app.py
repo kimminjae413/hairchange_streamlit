@@ -2623,7 +2623,7 @@ with tab5:
                     💰 **API 사용**: Gemini API {total_variations}회 호출
                     """)
                     if total_variations > 50:
-                        st.warning("⚠️ 50장 이상 생성 시 API 할당량 초과 가능. 옵션을 줄여보세요.")
+                        st.error(f"🚫 최대 50장까지만 생성 가능합니다. (현재 {total_variations}장) 옵션을 줄여주세요.")
                 else:
                     st.warning("길이와 각도를 각각 1개 이상 선택하세요.")
 
@@ -2651,7 +2651,7 @@ with tab5:
                 else:
                     st.warning("스타일/Bang과 각도를 선택하세요.")
 
-            generate_disabled = not batch_source_image or total_variations == 0
+            generate_disabled = not batch_source_image or total_variations == 0 or total_variations > 50
             if st.button("🚀 일괄 생성 시작", type="primary", disabled=generate_disabled, use_container_width=True):
                 st.session_state.batch_source_image = batch_source_image
 
