@@ -131,10 +131,16 @@ def calculate_realtime_metrics():
 
 def handle_verification_api():
     """테스터 검증용 API 엔드포인트 처리"""
-    query_params = st.query_params
-    
-    if "api" in query_params:
-        api_type = query_params["api"]
+    # Streamlit 버전 호환성 처리
+    try:
+        query_params = st.query_params
+        api_type = query_params.get("api", None)
+    except AttributeError:
+        query_params = st.experimental_get_query_params()
+        # 구버전은 리스트로 반환
+        api_type = query_params.get("api", [None])[0]
+
+    if api_type:
         
         if api_type == "logs":
             logs_data = get_logs_data()
@@ -502,93 +508,123 @@ FEMALE_CURL_TYPES = {
     'Mix': {'name': 'Mix Curl', 'description': '믹스컬 - 다양한 컬 조합'}
 }
 
-# ============== 남성 헤어 카테고리 정의 ==============
+# ============== 남성 헤어 카테고리 정의 (Hairgator Men's System) ==============
 
-# 남성 7대 스타일 카테고리
+# 남성 앞머리 길이 5단계
+MALE_BANG_LEVELS = {
+    'NONE': {'name': 'None', 'description': '앞머리 없음 / 올백', 'code': 'B0'},
+    'FOREHEAD': {'name': 'Fore Head', 'description': '이마 중앙 라인', 'code': 'B1'},
+    'EYEBROW': {'name': 'Eye Brow', 'description': '눈썹 라인 기준', 'code': 'B2'},
+    'EYE': {'name': 'Eye', 'description': '눈을 덮는 길이', 'code': 'B3'},
+    'CHEEKBONE': {'name': 'Cheekbone', 'description': '광대뼈(치크본) 라인까지', 'code': 'B4'}
+}
+
+# 남성 7대 스타일 카테고리 (상세 뉘앙스 포인트 포함)
 MALE_STYLE_CATEGORIES = {
     'SF': {
         'name': 'SIDE FRINGE (사이드 프린지)',
         'code': 'SF',
-        'description': '옆으로 흐르는 앞머리 - side-swept bangs',
-        'keywords': ['side fringe', 'side swept bangs', '옆으로 넘긴 앞머리']
+        'description': '옆으로 떨어지는 프린지 중심 스타일 - 앞머리 길이가 인상 변화에 가장 큰 영향',
+        'keywords': ['side fringe', 'side swept bangs', '옆으로 넘긴 앞머리'],
+        'nuance_points': [
+            '사이드 라인 각도',
+            '앞머리 무게 중심 (앞 / 옆)',
+            '컬 유무에 따른 흐름 차이',
+            '모량 밀도 차이'
+        ],
+        'bang_swap': {'FOREHEAD': ['EYEBROW', 'EYE'], 'EYEBROW': ['FOREHEAD', 'EYE'], 'EYE': ['FOREHEAD', 'EYEBROW']}
     },
     'SP': {
         'name': 'SIDE PART (사이드 파트)',
         'code': 'SP',
-        'description': '옆 가르마 스타일 - side parted hairstyle',
-        'keywords': ['side part', '가르마', '옆가르마']
+        'description': '가르마 기반 스타일 - 이마 노출 여부가 핵심, None 포함이 중요',
+        'keywords': ['side part', '가르마', '옆가르마'],
+        'nuance_points': [
+            '가르마 위치 (6:4 / 7:3 / 8:2)',
+            '탑 볼륨의 높낮이',
+            '사이드 눌림 강도',
+            '자연 볼륨 vs 드라이 볼륨'
+        ],
+        'bang_swap': {'NONE': ['FOREHEAD', 'EYEBROW', 'EYE'], 'FOREHEAD': ['NONE', 'EYEBROW', 'EYE'], 'EYEBROW': ['NONE', 'FOREHEAD', 'EYE'], 'EYE': ['NONE', 'FOREHEAD', 'EYEBROW']}
     },
     'FU': {
         'name': 'FRINGE UP (프린지 업)',
         'code': 'FU',
-        'description': '앞머리를 위로 올린 스타일 - bangs styled upward',
-        'keywords': ['fringe up', '앞머리 올림', '업스타일']
+        'description': '앞머리를 위로 세운 스타일 - 앞머리 길이 선택지가 단순해야 자연스러움 유지',
+        'keywords': ['fringe up', '앞머리 올림', '업스타일'],
+        'nuance_points': [
+            '리프트 강도',
+            '뿌리 볼륨',
+            '질감 (매트 / 세미 글로시)',
+            '각진 업 vs 자연 업'
+        ],
+        'bang_swap': {'NONE': ['FOREHEAD'], 'FOREHEAD': ['NONE']}
     },
     'PB': {
         'name': 'PUSHED BACK (푸쉬드 백)',
         'code': 'PB',
-        'description': '뒤로 넘긴 올백 스타일 - slicked back',
-        'keywords': ['pushed back', 'slicked back', '올백', '뒤로 넘김']
+        'description': '뒤로 넘기는 스타일 - 앞머리 길이 + 흐름이 핵심',
+        'keywords': ['pushed back', 'slicked back', '올백', '뒤로 넘김'],
+        'nuance_points': [
+            '뒤로 넘기는 각도',
+            '탑과 프론트 연결감',
+            '웨트 / 드라이 질감',
+            '컬의 유무'
+        ],
+        'bang_swap': {'NONE': ['FOREHEAD', 'EYEBROW', 'EYE'], 'FOREHEAD': ['NONE', 'EYEBROW', 'EYE'], 'EYEBROW': ['NONE', 'FOREHEAD', 'EYE'], 'EYE': ['NONE', 'FOREHEAD', 'EYEBROW']}
     },
     'BZ': {
         'name': 'BUZZ (버즈)',
         'code': 'BZ',
-        'description': '아주 짧은 버즈컷 - very short buzz cut',
-        'keywords': ['buzz cut', '버즈컷', '짧은 머리']
+        'description': '길이 개념보다 페이드와 질감이 핵심 - Bang 스왑 없음',
+        'keywords': ['buzz cut', '버즈컷', '짧은 머리'],
+        'nuance_points': [
+            '로우 / 미드 / 하이 페이드',
+            '오버 길이 3~5단계',
+            '스킨 페이드 대비감',
+            '매트 / 거친 질감 / 클린'
+        ],
+        'bang_swap': {}  # 길이 스왑 없음 (질감·페이드만)
     },
     'CP': {
         'name': 'CROP (크롭)',
         'code': 'CP',
-        'description': '짧고 정돈된 크롭컷 - short textured crop',
-        'keywords': ['crop cut', '크롭컷', '짧은 앞머리']
+        'description': '짧은 프린지 중심 - 앞머리 존재 여부만으로도 충분한 차별',
+        'keywords': ['crop cut', '크롭컷', '짧은 앞머리'],
+        'nuance_points': [
+            '프린지 라인의 직선 / 텍스처 컷',
+            '모량 밀도',
+            '탑 볼륨 유무'
+        ],
+        'bang_swap': {'NONE': ['FOREHEAD'], 'FOREHEAD': ['NONE']}
     },
     'MC': {
         'name': 'MOHICAN (모히칸)',
         'code': 'MC',
-        'description': '중앙이 긴 모히칸 스타일 - mohawk/mohican style',
-        'keywords': ['mohican', 'mohawk', '모히칸', '소프트 모히칸']
+        'description': '실루엣 중심 스타일 - 앞머리 길이 선택 최소화',
+        'keywords': ['mohican', 'mohawk', '모히칸', '소프트 모히칸'],
+        'nuance_points': [
+            '센터 라인 폭',
+            '사이드 극단적 페이드',
+            '질감 강조도'
+        ],
+        'bang_swap': {'NONE': ['FOREHEAD'], 'FOREHEAD': ['NONE']}
     }
 }
 
-# 남성 스타일별 뱅 스왑 규칙
-# 각 스타일에서 어떤 다른 스타일로 변환 가능한지 정의
-MALE_BANG_SWAP_RULES = {
-    # SIDE FRINGE → 앞머리 있는 스타일들과 호환
-    'SF': {
-        'can_swap_to': ['SP', 'FU', 'CP'],
-        'description': 'SF는 앞머리 기반이므로 SP, FU, CP로 변환 가능'
-    },
-    # SIDE PART → 가르마 기반, 올백 계열과 호환
-    'SP': {
-        'can_swap_to': ['SF', 'PB', 'FU'],
-        'description': 'SP는 가르마 기반이므로 SF, PB, FU로 변환 가능'
-    },
-    # FRINGE UP → 앞머리 올림, 다양한 스타일과 호환
-    'FU': {
-        'can_swap_to': ['SF', 'SP', 'PB', 'MC'],
-        'description': 'FU는 앞머리 올림이므로 대부분 스타일로 변환 가능'
-    },
-    # PUSHED BACK → 올백, 앞머리 없는 스타일들과 호환
-    'PB': {
-        'can_swap_to': ['SP', 'FU', 'MC'],
-        'description': 'PB는 올백이므로 SP, FU, MC로 변환 가능'
-    },
-    # BUZZ → 매우 짧아서 제한적
-    'BZ': {
-        'can_swap_to': ['CP'],
-        'description': 'BZ는 매우 짧아서 CP로만 변환 가능 (길이 제한)'
-    },
-    # CROP → 짧은 앞머리, 제한적 변환
-    'CP': {
-        'can_swap_to': ['SF', 'BZ', 'FU'],
-        'description': 'CP는 짧은 앞머리이므로 SF, BZ, FU로 변환 가능'
-    },
-    # MOHICAN → 중앙 긴 스타일, 특수
-    'MC': {
-        'can_swap_to': ['FU', 'PB'],
-        'description': 'MC는 중앙이 길어 FU, PB로 변환 가능'
-    }
+# 남성 스타일 간 변환 규칙 (스타일→스타일 변환)
+MALE_STYLE_SWAP_RULES = {
+    'SF': {'can_swap_to': ['SP', 'FU', 'CP'], 'description': 'SF는 앞머리 기반이므로 SP, FU, CP로 변환 가능'},
+    'SP': {'can_swap_to': ['SF', 'PB', 'FU'], 'description': 'SP는 가르마 기반이므로 SF, PB, FU로 변환 가능'},
+    'FU': {'can_swap_to': ['SF', 'SP', 'PB', 'MC'], 'description': 'FU는 앞머리 올림이므로 대부분 스타일로 변환 가능'},
+    'PB': {'can_swap_to': ['SP', 'FU', 'MC'], 'description': 'PB는 올백이므로 SP, FU, MC로 변환 가능'},
+    'BZ': {'can_swap_to': ['CP'], 'description': 'BZ는 매우 짧아서 CP로만 변환 가능'},
+    'CP': {'can_swap_to': ['SF', 'BZ', 'FU'], 'description': 'CP는 짧은 앞머리이므로 SF, BZ, FU로 변환 가능'},
+    'MC': {'can_swap_to': ['FU', 'PB'], 'description': 'MC는 중앙이 길어 FU, PB로 변환 가능'}
 }
+
+# 하위 호환성을 위한 별칭
+MALE_BANG_SWAP_RULES = MALE_STYLE_SWAP_RULES
 
 # 남성 길이 카테고리 (기존 호환성 유지)
 MALE_LENGTH_CATEGORIES = {
@@ -661,7 +697,7 @@ ANGLE_OPTIONS = {
 }
 
 
-def generate_length_variation(image, source_length, target_length, gender="neutral",
+def generate_length_variation(image, source_length, target_length, gender="female",
                               bang=None, curl=None, male_style=None, target_male_style=None):
     """
     Gemini로 헤어 길이 변환 이미지 생성
@@ -670,7 +706,7 @@ def generate_length_variation(image, source_length, target_length, gender="neutr
         image: PIL Image 객체 (원본 이미지)
         source_length: 원본 길이 카테고리 ('A'-'H')
         target_length: 목표 길이 카테고리 ('A'-'H')
-        gender: 성별 ('male', 'female', 'neutral')
+        gender: 성별 ('male', 'female')
         bang: 앞머리 타입 (B0-B4)
         curl: 컬 타입 (여성용: Straight, C, CS, S, SS, Mix)
         male_style: 현재 남성 스타일 (SF, SP, FU, PB, BZ, CP, MC)
@@ -682,13 +718,22 @@ def generate_length_variation(image, source_length, target_length, gender="neutr
     if not GEMINI_API_KEY:
         return None, "Gemini API 키가 설정되지 않았습니다."
 
-    if source_length == target_length and target_length != 'H' and target_male_style is None:
-        return image, None  # 같은 길이이고 스타일 변환도 없으면 원본 반환
+    # 남성: 스타일 변환 / 여성: 길이 변환
+    is_male_style_transform = gender == 'male' and target_length in MALE_STYLE_CATEGORIES
 
-    # 성별에 따른 카테고리 선택
-    length_cats = get_length_categories(gender)
-    source_info = length_cats.get(source_length, length_cats.get('D', LENGTH_CATEGORIES['D']))
-    target_info = length_cats.get(target_length, length_cats.get('D', LENGTH_CATEGORIES['D']))
+    if is_male_style_transform:
+        # 남성 스타일 변환: target_length가 실제로는 스타일 코드 (SF, SP 등)
+        if source_length == target_length and target_male_style is None:
+            return image, None  # 같은 스타일이면 원본 반환
+        source_info = MALE_STYLE_CATEGORIES.get(male_style or source_length, {})
+        target_info = MALE_STYLE_CATEGORIES.get(target_length, {})
+    else:
+        # 여성/중립: 길이 변환
+        if source_length == target_length and target_length != 'H' and target_male_style is None:
+            return image, None  # 같은 길이이고 스타일 변환도 없으면 원본 반환
+        length_cats = get_length_categories(gender)
+        source_info = length_cats.get(source_length, length_cats.get('D', LENGTH_CATEGORIES['D']))
+        target_info = length_cats.get(target_length, length_cats.get('D', LENGTH_CATEGORIES['D']))
 
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
@@ -757,11 +802,21 @@ def generate_length_variation(image, source_length, target_length, gender="neutr
 - CP (CROP): 짧고 정돈된 크롭컷 - short textured crop
 - MC (MOHICAN): 중앙이 긴 모히칸 스타일 - mohawk/mohican style
 
-📋 MALE BANG POSITIONS:
-- B0: 앞머리 없음 / 올백 (PB, BZ)
-- B1: 이마 중앙 라인 (CP, BZ)
-- B2: 눈썹 라인 기준 (SF, SP, CP)
-- B3: 눈을 덮는 길이 (SF, FU)
+📋 MALE BANG POSITIONS (5단계):
+- None: 앞머리 없음 / 올백
+- Fore Head: 이마 중앙 라인
+- Eye Brow: 눈썹 라인 기준
+- Eye: 눈을 덮는 길이
+- Cheekbone: 광대뼈(치크본) 라인까지
+
+📋 MALE BANG SWAP RULES (스타일별):
+- SF (SIDE FRINGE): Fore Head ↔ Eye Brow ↔ Eye
+- SP (SIDE PART): None ↔ Fore Head ↔ Eye Brow ↔ Eye (None 포함 다방향)
+- FU (FRINGE UP): None ↔ Fore Head
+- PB (PUSHED BACK): None ↔ Fore Head ↔ Eye Brow ↔ Eye (SP와 동일)
+- BZ (BUZZ): Bang 스왑 없음 (질감·페이드 변주만)
+- CP (CROP): None ↔ Fore Head
+- MC (MOHICAN): None ↔ Fore Head
 - B4: 광대뼈 라인 (SF, SP, MC)"""
 
         if target_length == 'H':
@@ -790,8 +845,55 @@ The change should be noticeable but subtle - like the same person styled their h
 
 OUTPUT: Single high-quality image with the subtle styling variation."""
         else:
-            # 길이 변환 (+ 스타일 변환 if applicable)
-            prompt = f"""[HAIR TRANSFORMATION TASK]
+            # 남성: 스타일 변환 / 여성: 길이 변환
+            if is_male_style_transform:
+                # 타겟 스타일의 뉘앙스 포인트 가져오기
+                target_nuance = target_info.get('nuance_points', [])
+                nuance_text = '\n'.join([f"  - {p}" for p in target_nuance]) if target_nuance else "  - 기본 스타일링 적용"
+
+                # 남성 스타일 변환 프롬프트
+                prompt = f"""[MALE HAIRSTYLE TRANSFORMATION - Hairgator Men's System]
+
+Transform the male hairstyle in this image to a different style category.
+
+⚠️ ABSOLUTE RULES - DO NOT VIOLATE:
+1. FACE: Keep the EXACT same face. Same eyes, nose, lips, skin tone, facial structure. NO changes whatsoever.
+2. HAIR COLOR: Keep the EXACT same hair color and tone.
+3. CLOTHES: Keep the EXACT same clothing.
+4. BACKGROUND: Keep a clean, neutral studio background.
+5. LIGHTING: Keep consistent professional studio lighting.
+
+💈 STYLE TRANSFORMATION:
+- FROM: {source_info.get('name', male_style or source_length)}
+  → {source_info.get('description', '')}
+- TO: {target_info.get('name', target_length)}
+  → {target_info.get('description', '')}
+
+{gender_spec}
+
+📋 7 MALE STYLE CATEGORIES (Reference):
+- SF: 옆으로 떨어지는 프린지 - 앞머리 길이가 인상에 가장 큰 영향
+- SP: 가르마 기반 - 이마 노출 여부 핵심, 가르마 위치 6:4/7:3/8:2
+- FU: 앞머리를 위로 세움 - 리프트 강도와 질감이 핵심
+- PB: 뒤로 넘기는 올백 - 넘기는 각도와 웨트/드라이 질감
+- BZ: 매우 짧은 버즈 - 페이드 높이와 오버 길이가 핵심
+- CP: 짧은 프린지 크롭 - 프린지 라인과 텍스처
+- MC: 모히칸/투블럭 - 센터 라인 폭과 사이드 페이드
+
+🎨 TARGET STYLE ({target_length}) NUANCE POINTS:
+{nuance_text}
+
+🎯 TRANSFORMATION APPROACH:
+- Apply the TARGET style's characteristic features clearly
+- Adjust BANG DIRECTION and STYLING FLOW to match target style
+- Keep overall hair VOLUME and LENGTH similar when possible
+- The transformation should be clearly recognizable as the target style
+- Maintain natural hair texture and realistic appearance
+
+OUTPUT: Single high-quality image showing the style transformation."""
+            else:
+                # 여성/중립 길이 변환 프롬프트
+                prompt = f"""[HAIR LENGTH TRANSFORMATION TASK]
 
 Transform the hairstyle in this image.
 
@@ -817,7 +919,7 @@ Transform the hairstyle in this image.
 OUTPUT: Single high-quality image showing the transformation."""
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model="gemini-3-pro-image-preview",
             contents=[prompt, image],
             config=types.GenerateContentConfig(
                 response_modalities=['IMAGE', 'TEXT']
@@ -843,14 +945,14 @@ OUTPUT: Single high-quality image showing the transformation."""
             return None, f"길이 변환 실패: {error_msg}"
 
 
-def generate_angle_variation(image, target_angle, gender="neutral"):
+def generate_angle_variation(image, target_angle, gender="female"):
     """
     Gemini로 헤어 각도 변환 이미지 생성 (세밀한 각도 지원)
 
     Args:
         image: PIL Image 객체 (원본 이미지, 정면으로 가정)
         target_angle: 목표 각도 (0, 22.5, 45, 67.5, 90)
-        gender: 성별 ('male', 'female', 'neutral')
+        gender: 성별 ('male', 'female')
 
     Returns:
         PIL Image 또는 None, 에러 메시지
@@ -898,7 +1000,7 @@ The output must look like a photo of the SAME person taken from {target_angle}°
 OUTPUT: Single high-quality image showing the {angle_info['name']} view of this exact person."""
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model="gemini-3-pro-image-preview",
             contents=[prompt, image],
             config=types.GenerateContentConfig(
                 response_modalities=['IMAGE', 'TEXT']
@@ -924,69 +1026,72 @@ OUTPUT: Single high-quality image showing the {angle_info['name']} view of this 
             return None, f"각도 변환 실패: {error_msg}"
 
 
-def generate_batch_variations(image, source_length, target_lengths, target_angles, gender="neutral", progress_callback=None,
-                              bang=None, curl=None, male_style=None, target_male_style=None):
+def generate_batch_variations(image, source_length, target_items, target_angles, gender="female", progress_callback=None,
+                              bang=None, curl=None, male_style=None, target_male_style=None, item_categories=None):
     """
-    배치로 길이/각도 변환 이미지 생성
+    배치로 변환 이미지 생성 (여성: 길이×각도, 남성: 스타일×각도)
 
     Args:
         image: PIL Image 객체 (원본 이미지)
-        source_length: 원본 길이 카테고리 ('A'-'H')
-        target_lengths: 목표 길이 리스트 ['A', 'B', ...]
+        source_length: 원본 길이/스타일 코드
+        target_items: 목표 리스트 (여성: ['A','B',...] / 남성: ['SF','SP',...])
         target_angles: 목표 각도 리스트 [0, 22.5, 45, ...]
         gender: 성별
         progress_callback: 진행 상황 콜백 함수(current, total, message)
         bang: 앞머리 타입 (B0-B4)
         curl: 컬 타입 (여성용)
-        male_style: 현재 남성 스타일 카테고리 (SF, SP, FU, PB, BZ, CP, MC)
+        male_style: 현재 남성 스타일 카테고리
         target_male_style: 목표 남성 스타일 카테고리
+        item_categories: 표시용 카테고리 dict (여성: FEMALE_LENGTH_CATEGORIES / 남성: MALE_STYLE_CATEGORIES)
 
     Returns:
-        dict: {(length, angle): image} 결과 딕셔너리
-        dict: {(length, angle): error} 에러 딕셔너리
+        dict: {(item, angle): image} 결과 딕셔너리
+        dict: {(item, angle): error} 에러 딕셔너리
     """
+    if item_categories is None:
+        item_categories = FEMALE_LENGTH_CATEGORIES if gender == 'female' else MALE_STYLE_CATEGORIES
+
     results = {}
     errors = {}
+    is_male = gender == 'male'
+    label = "스타일" if is_male else "길이"
 
-    # 전체 작업 수 계산
-    total_tasks = len(target_lengths) * len(target_angles)
+    total_tasks = len(target_items) * len(target_angles)
     current_task = 0
 
-    for length in target_lengths:
-        # 먼저 해당 길이로 변환
-        if progress_callback:
-            progress_callback(current_task, total_tasks, f"길이 변환 중: {LENGTH_CATEGORIES[length]['name']}")
+    for item in target_items:
+        item_name = item_categories.get(item, {}).get('name', item)
 
-        length_image, length_error = generate_length_variation(
-            image, source_length, length, gender,
+        if progress_callback:
+            progress_callback(current_task, total_tasks, f"{label} 변환 중: {item_name}")
+
+        item_image, item_error = generate_length_variation(
+            image, source_length, item, gender,
             bang=bang, curl=curl, male_style=male_style, target_male_style=target_male_style
         )
 
-        if length_error and length != source_length:
-            # 길이 변환 실패 시 해당 길이의 모든 각도에 에러 기록
+        if item_error and item != source_length:
             for angle in target_angles:
-                errors[(length, angle)] = length_error
+                errors[(item, angle)] = item_error
                 current_task += 1
             continue
 
-        # 길이 변환 성공 (또는 같은 길이) - 각 각도로 변환
-        base_image = length_image if length_image else image
+        base_image = item_image if item_image else image
 
         for angle in target_angles:
             current_task += 1
 
             if progress_callback:
                 angle_name = ANGLE_OPTIONS.get(str(angle), ANGLE_OPTIONS.get(str(int(angle)) if angle == int(angle) else '45', {})).get('name', f'{angle}°')
-                progress_callback(current_task, total_tasks, f"{LENGTH_CATEGORIES[length]['name']} + {angle_name}")
+                progress_callback(current_task, total_tasks, f"{item_name} + {angle_name}")
 
             angle_image, angle_error = generate_angle_variation(base_image, angle, gender)
 
             if angle_error:
-                errors[(length, str(angle))] = angle_error
+                errors[(item, str(angle))] = angle_error
             else:
-                results[(length, str(angle))] = angle_image
+                results[(item, str(angle))] = angle_image
 
-            # API 요청 간 약간의 딜레이 (rate limiting 방지)
             time.sleep(0.5)
 
     return results, errors
@@ -1562,17 +1667,11 @@ st.markdown("""
 
 # API 키 체크
 if not VMODEL_API_KEY:
-    st.error("""
-    ⚠️ **VModel API 키가 필요합니다!**
-    
-    1. [VModel.ai](https://vmodel.ai)에서 API 키 발급
-    2. Streamlit Cloud 대시보드 → Settings → Secrets
-    3. 다음 내용 추가:
-    ```
-    VMODEL_API_KEY = "your-api-key-here"
-    ```
+    st.warning("""
+    ⚠️ **VModel API 키 미설정** - 헤어 변경 기능 사용 불가 (배치 변환은 Gemini API로 작동)
+
+    VModel API 키 설정: Streamlit Secrets에 `VMODEL_API_KEY = "your-key"` 추가
     """)
-    st.stop()
 
 # 실시간 성능 지표 표시
 metrics = calculate_realtime_metrics()
@@ -1963,15 +2062,7 @@ with tab1:
 
 # ============== 배치 변환 탭 ==============
 with tab5:
-    st.header("🔄 배치 변환 (길이 × 각도)")
-    st.markdown("""
-    <div class="info-box">
-        💡 <strong>배치 변환이란?</strong><br>
-        하나의 헤어스타일 이미지를 다양한 <strong>길이</strong>와 <strong>각도</strong> 조합으로 자동 변환합니다.<br>
-        예: 미디엄 정면 → 숏컷 45°, 롱헤어 90° 등 한 번에 여러 변형 생성!
-    </div>
-    """, unsafe_allow_html=True)
-
+    st.header("🔄 배치 변환")
     # 세션 상태 초기화
     if 'batch_results' not in st.session_state:
         st.session_state.batch_results = None
@@ -1979,17 +2070,37 @@ with tab5:
         st.session_state.batch_errors = None
     if 'batch_source_image' not in st.session_state:
         st.session_state.batch_source_image = None
+    if 'batch_gender' not in st.session_state:
+        st.session_state.batch_gender = 'female'
 
     # API 키 체크
     if not GEMINI_API_KEY:
         st.error("⚠️ Gemini API 키가 설정되지 않았습니다. Secrets에 GEMINI_API_KEY를 추가하세요.")
     else:
+        # ========== 1. 성별 선택 (최상단) ==========
+        batch_gender = st.radio("성별 선택", ["female", "male"], horizontal=True, index=0,
+                                format_func=lambda x: "👩 여성 (길이 × 각도)" if x == "female" else "👨 남성 (스타일 × 각도)",
+                                key="batch_gender_radio")
+        st.session_state.batch_gender = batch_gender
+
+        if batch_gender == 'female':
+            st.markdown("""
+            <div class="info-box">
+                💡 <strong>여성 배치 변환</strong>: 하나의 이미지를 다양한 <strong>길이(A~H)</strong>와 <strong>각도(0°~90°)</strong> 조합으로 변환합니다.
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class="info-box">
+                💡 <strong>남성 배치 변환</strong>: 하나의 이미지를 다양한 <strong>스타일(SF/SP/FU/PB/BZ/CP/MC)</strong>과 <strong>각도</strong> 조합으로 변환합니다.
+            </div>
+            """, unsafe_allow_html=True)
+
         col_left, col_right = st.columns([1, 2])
 
         with col_left:
+            # ========== 2. 이미지 소스 ==========
             st.subheader("1️⃣ 원본 이미지")
-
-            # 이미지 소스 선택
             image_source = st.radio(
                 "이미지 소스",
                 ["새 이미지 업로드", "저장된 시드에서 선택", "헤어 변경 결과 사용"],
@@ -2032,128 +2143,147 @@ with tab5:
                 else:
                     st.warning("처리 기록이 없습니다. '헤어 변경' 탭에서 먼저 변환하세요.")
 
-            # 원본 길이 선택
-            st.subheader("2️⃣ 원본 길이 지정")
-            source_length = st.selectbox(
-                "현재 헤어 길이",
-                list(LENGTH_CATEGORIES.keys()),
-                format_func=lambda x: f"{x}: {LENGTH_CATEGORIES[x]['name']} ({LENGTH_CATEGORIES[x]['cm']})",
-                index=3  # D (미디엄) 기본
-            )
-
-            # 성별 선택
-            st.subheader("3️⃣ 성별")
-            batch_gender = st.radio("성별", ["male", "female", "neutral"], horizontal=True, index=2)
-
-            # 성별별 추가 옵션
+            # ========== 3. 성별별 원본/옵션 ==========
             selected_bang = None
             selected_curl = None
             selected_male_style = None
             target_male_style = None
+            source_item = None  # 원본 길이 또는 스타일
 
             if batch_gender == 'female':
-                st.subheader("👩 여성 옵션")
-
-                # 앞머리 선택
-                st.markdown("**💇 앞머리 (Bang)**")
-                bang_options = list(FEMALE_BANG_CATEGORIES.keys())
-                selected_bang = st.selectbox(
-                    "현재 앞머리",
-                    bang_options,
-                    format_func=lambda x: f"{x}: {FEMALE_BANG_CATEGORIES[x]['name']} - {FEMALE_BANG_CATEGORIES[x]['description']}",
-                    key="female_bang"
+                # --- 여성: 원본 길이 + 앞머리 + 컬 ---
+                st.subheader("2️⃣ 원본 길이")
+                source_item = st.selectbox(
+                    "현재 헤어 길이",
+                    list(FEMALE_LENGTH_CATEGORIES.keys()),
+                    format_func=lambda x: f"{x}: {FEMALE_LENGTH_CATEGORIES[x]['name']} — {FEMALE_LENGTH_CATEGORIES[x]['description']}",
+                    index=3,  # D (Medium)
+                    key="batch_female_source"
                 )
 
-                # 컬 타입 선택
+                st.subheader("3️⃣ 추가 옵션")
+                st.markdown("**💇 앞머리 (Bang)**")
+                selected_bang = st.selectbox(
+                    "현재 앞머리",
+                    list(FEMALE_BANG_CATEGORIES.keys()),
+                    format_func=lambda x: f"{x}: {FEMALE_BANG_CATEGORIES[x]['name']} — {FEMALE_BANG_CATEGORIES[x]['description']}",
+                    key="batch_female_bang"
+                )
+
                 st.markdown("**🌀 컬 타입 (Curl)**")
-                curl_options = list(FEMALE_CURL_TYPES.keys())
                 selected_curl = st.selectbox(
                     "현재 컬",
-                    curl_options,
-                    format_func=lambda x: f"{FEMALE_CURL_TYPES[x]['name']} - {FEMALE_CURL_TYPES[x]['description']}",
-                    key="female_curl"
+                    list(FEMALE_CURL_TYPES.keys()),
+                    format_func=lambda x: f"{FEMALE_CURL_TYPES[x]['name']} — {FEMALE_CURL_TYPES[x]['description']}",
+                    key="batch_female_curl"
                 )
 
-            elif batch_gender == 'male':
-                st.subheader("👨 남성 옵션")
+                # 변환 가능 길이 안내
+                allowed = FEMALE_LENGTH_TRANSFORM_RULES.get(source_item, [])
+                if allowed:
+                    st.caption(f"변환 가능 길이: {source_item}(현재), {', '.join(allowed)}")
+                else:
+                    st.caption(f"{source_item}은 뉘앙스 변형만 가능합니다 (길이 고정)")
 
-                # 현재 스타일 카테고리 선택
-                st.markdown("**💈 현재 스타일**")
-                style_options = list(MALE_STYLE_CATEGORIES.keys())
+            else:
+                # --- 남성: 원본 스타일 + 앞머리 ---
+                st.subheader("2️⃣ 원본 스타일")
                 selected_male_style = st.selectbox(
                     "현재 스타일 카테고리",
-                    style_options,
+                    list(MALE_STYLE_CATEGORIES.keys()),
                     format_func=lambda x: f"{x}: {MALE_STYLE_CATEGORIES[x]['name']}",
-                    key="male_style_current"
+                    key="batch_male_style"
                 )
+                source_item = selected_male_style
 
-                # 변환 가능한 스타일 표시
-                if selected_male_style:
-                    swap_options = get_male_style_swap_options(selected_male_style)
-                    if swap_options:
-                        st.markdown(f"**🔄 변환 가능 스타일**: {', '.join(swap_options)}")
-                        target_male_style = st.selectbox(
-                            "목표 스타일 (선택사항)",
-                            ["변환 안 함"] + swap_options,
-                            format_func=lambda x: x if x == "변환 안 함" else f"{x}: {MALE_STYLE_CATEGORIES[x]['name']}",
-                            key="male_style_target"
-                        )
-                        if target_male_style == "변환 안 함":
-                            target_male_style = None
-                    else:
-                        st.info(f"ℹ️ {selected_male_style}는 다른 스타일로 변환이 제한됩니다.")
+                # 변환 가능 스타일 안내
+                swap_options = get_male_style_swap_options(selected_male_style)
+                if swap_options:
+                    st.caption(f"변환 가능: {selected_male_style}(현재), {', '.join(swap_options)}")
+                else:
+                    st.caption(f"{selected_male_style}는 다른 스타일로 변환이 제한됩니다.")
 
-                # 앞머리 선택
+                st.subheader("3️⃣ 추가 옵션")
                 st.markdown("**💇 앞머리 (Bang)**")
-                male_bang_options = list(MALE_BANG_CATEGORIES.keys())
                 selected_bang = st.selectbox(
                     "현재 앞머리",
-                    male_bang_options,
-                    format_func=lambda x: f"{x}: {MALE_BANG_CATEGORIES[x]['name']} - {MALE_BANG_CATEGORIES[x]['description']}",
-                    key="male_bang"
+                    list(MALE_BANG_CATEGORIES.keys()),
+                    format_func=lambda x: f"{x}: {MALE_BANG_CATEGORIES[x]['name']} — {MALE_BANG_CATEGORIES[x]['description']}",
+                    key="batch_male_bang"
                 )
 
         with col_right:
             st.subheader("4️⃣ 변환 옵션 선택")
 
-            col_len, col_ang = st.columns(2)
+            col_items, col_ang = st.columns(2)
 
-            with col_len:
-                st.markdown("**📏 길이 변환**")
+            with col_items:
+                if batch_gender == 'female':
+                    # ===== 여성: 길이 체크박스 (변환 규칙 적용) =====
+                    st.markdown("**📏 길이 변환**")
 
-                # 프리셋 버튼
-                preset_col1, preset_col2 = st.columns(2)
-                with preset_col1:
-                    if st.button("전체 선택", key="len_all"):
-                        st.session_state.len_select_all = True
-                with preset_col2:
-                    if st.button("전체 해제", key="len_none"):
-                        st.session_state.len_select_all = False
+                    btn_col = st.container()
+                    with btn_col:
+                        if st.button("✅ 전체 선택", key="flen_all", use_container_width=True):
+                            st.session_state.flen_select_all = True
+                        if st.button("❌ 전체 해제", key="flen_none", use_container_width=True):
+                            st.session_state.flen_select_all = False
 
-                # 길이 체크박스
-                selected_lengths = []
-                for key, info in LENGTH_CATEGORIES.items():
-                    default_val = getattr(st.session_state, 'len_select_all', False) or key == source_length
-                    if st.checkbox(
-                        f"{key}: {info['name']} ({info['cm']})",
-                        value=default_val,
-                        key=f"len_{key}"
-                    ):
-                        selected_lengths.append(key)
+                    # 현재 길이 + 변환 규칙에 따른 허용 길이만 표시
+                    allowed_lengths = [source_item] + FEMALE_LENGTH_TRANSFORM_RULES.get(source_item, [])
+                    selected_items = []
+
+                    for key in allowed_lengths:
+                        if key in FEMALE_LENGTH_CATEGORIES:
+                            info = FEMALE_LENGTH_CATEGORIES[key]
+                            default_val = getattr(st.session_state, 'flen_select_all', False) or key == source_item
+                            if st.checkbox(
+                                f"{key}: {info['name']} — {info['description'][:20]}",
+                                value=default_val,
+                                key=f"flen_{key}"
+                            ):
+                                selected_items.append(key)
+
+                    if not FEMALE_LENGTH_TRANSFORM_RULES.get(source_item, []):
+                        st.info("ℹ️ H(Short)는 길이 변환 없이 뉘앙스 변형만 가능합니다.")
+
+                else:
+                    # ===== 남성: 스타일 체크박스 (swap 규칙 적용) =====
+                    st.markdown("**💈 스타일 변환**")
+
+                    btn_col = st.container()
+                    with btn_col:
+                        if st.button("✅ 전체 선택", key="mstyle_all", use_container_width=True):
+                            st.session_state.mstyle_select_all = True
+                        if st.button("❌ 전체 해제", key="mstyle_none", use_container_width=True):
+                            st.session_state.mstyle_select_all = False
+
+                    # 현재 스타일 + swap 가능 스타일만 표시
+                    swap_list = get_male_style_swap_options(selected_male_style)
+                    available_styles = [selected_male_style] + swap_list
+                    selected_items = []
+
+                    for style_key in available_styles:
+                        if style_key in MALE_STYLE_CATEGORIES:
+                            info = MALE_STYLE_CATEGORIES[style_key]
+                            default_val = getattr(st.session_state, 'mstyle_select_all', False) or style_key == selected_male_style
+                            if st.checkbox(
+                                f"{style_key}: {info['name'].split('(')[0].strip()}",
+                                value=default_val,
+                                key=f"mstyle_{style_key}"
+                            ):
+                                selected_items.append(style_key)
 
             with col_ang:
                 st.markdown("**📐 각도 변환**")
 
-                # 프리셋 버튼
-                preset_col1, preset_col2 = st.columns(2)
-                with preset_col1:
-                    if st.button("전체 선택", key="ang_all"):
+                btn_col2 = st.container()
+                with btn_col2:
+                    if st.button("✅ 전체 선택", key="ang_all", use_container_width=True):
                         st.session_state.ang_select_all = True
-                with preset_col2:
-                    if st.button("전체 해제", key="ang_none"):
+                    if st.button("❌ 전체 해제", key="ang_none", use_container_width=True):
                         st.session_state.ang_select_all = False
 
-                # 각도 체크박스
                 selected_angles = []
                 for key, info in ANGLE_OPTIONS.items():
                     default_val = getattr(st.session_state, 'ang_select_all', False) or key == '0'
@@ -2164,23 +2294,27 @@ with tab5:
                     ):
                         selected_angles.append(float(key))
 
-            # 예상 생성 개수 표시
-            total_variations = len(selected_lengths) * len(selected_angles)
+            # ========== 예상 결과 + 생성 버튼 ==========
+            total_variations = len(selected_items) * len(selected_angles)
             st.divider()
 
             if total_variations > 0:
+                item_label = "스타일" if batch_gender == "male" else "길이"
                 st.info(f"""
-                📊 **예상 결과**: {len(selected_lengths)}개 길이 × {len(selected_angles)}개 각도 = **{total_variations}장**
+                📊 **예상 결과**: {len(selected_items)}개 {item_label} × {len(selected_angles)}개 각도 = **{total_variations}장**
                 ⏱️ **예상 시간**: 약 {total_variations * 15}~{total_variations * 30}초
                 💰 **API 사용**: Gemini API {total_variations}회 호출
                 """)
             else:
-                st.warning("길이와 각도를 각각 1개 이상 선택하세요.")
+                item_label = "스타일" if batch_gender == "male" else "길이"
+                st.warning(f"{item_label}과 각도를 각각 1개 이상 선택하세요.")
 
-            # 생성 버튼
             generate_disabled = not batch_source_image or total_variations == 0
             if st.button("🚀 배치 변환 시작", type="primary", disabled=generate_disabled, use_container_width=True):
                 st.session_state.batch_source_image = batch_source_image
+
+                # 카테고리 dict 결정
+                item_cats = FEMALE_LENGTH_CATEGORIES if batch_gender == 'female' else MALE_STYLE_CATEGORIES
 
                 progress_bar = st.progress(0)
                 status_text = st.empty()
@@ -2195,21 +2329,23 @@ with tab5:
 
                     results, errors = generate_batch_variations(
                         batch_source_image,
-                        source_length,
-                        selected_lengths,
+                        source_item,
+                        selected_items,
                         selected_angles,
                         batch_gender,
                         update_progress,
                         bang=selected_bang,
                         curl=selected_curl,
                         male_style=selected_male_style,
-                        target_male_style=target_male_style
+                        target_male_style=target_male_style,
+                        item_categories=item_cats
                     )
 
                     processing_time = time.time() - start_time
 
                     st.session_state.batch_results = results
                     st.session_state.batch_errors = errors
+                    st.session_state.batch_item_categories = item_cats
 
                 progress_bar.progress(1.0)
                 status_text.text(f"완료! ({processing_time:.1f}초)")
@@ -2222,41 +2358,42 @@ with tab5:
                 else:
                     st.error(f"❌ 모든 변환 실패 ({error_count}장)")
 
-    # 결과 표시
+    # ========== 결과 표시 ==========
     if st.session_state.batch_results:
         st.divider()
         st.subheader("🎨 변환 결과")
 
         results = st.session_state.batch_results
         errors = st.session_state.batch_errors or {}
+        item_cats = getattr(st.session_state, 'batch_item_categories', FEMALE_LENGTH_CATEGORIES)
 
-        # 원본 이미지 표시
         if st.session_state.batch_source_image:
             st.markdown("**📷 원본 이미지**")
             st.image(st.session_state.batch_source_image, width=200)
 
         st.markdown("**📊 변환 결과 그리드**")
 
-        # 결과를 길이별로 그룹화하여 표시
-        lengths_in_results = sorted(set(k[0] for k in results.keys()))
+        items_in_results = sorted(set(k[0] for k in results.keys()))
         angles_in_results = sorted(set(float(k[1]) for k in results.keys()))
 
         # 헤더 행 (각도)
         header_cols = st.columns([1] + [1] * len(angles_in_results))
-        header_cols[0].markdown("**길이 \\ 각도**")
+        row_label = "스타일" if st.session_state.get('batch_gender', 'female') == 'male' else "길이"
+        header_cols[0].markdown(f"**{row_label} \\ 각도**")
         for i, angle in enumerate(angles_in_results):
             angle_key = str(angle) if angle in [22.5, 67.5] else str(int(angle))
             angle_name = ANGLE_OPTIONS.get(angle_key, {}).get('name', f'{angle}°')
             header_cols[i + 1].markdown(f"**{angle_name}**")
 
-        # 데이터 행 (길이별)
-        for length in lengths_in_results:
+        # 데이터 행
+        for item in items_in_results:
             row_cols = st.columns([1] + [1] * len(angles_in_results))
-            row_cols[0].markdown(f"**{length}: {LENGTH_CATEGORIES[length]['name']}**")
+            item_name = item_cats.get(item, {}).get('name', item)
+            row_cols[0].markdown(f"**{item}: {item_name}**")
 
             for i, angle in enumerate(angles_in_results):
                 angle_key = str(angle) if angle in [22.5, 67.5] else str(int(angle))
-                key = (length, angle_key)
+                key = (item, angle_key)
 
                 if key in results and results[key]:
                     row_cols[i + 1].image(results[key], use_container_width=True)
@@ -2270,16 +2407,15 @@ with tab5:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             if results:
-                # ZIP 파일 생성
                 zip_buffer = io.BytesIO()
                 import zipfile
                 with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                    for (length, angle), img in results.items():
+                    for (item, angle), img in results.items():
                         if img:
                             img_buffer = io.BytesIO()
                             img.save(img_buffer, format='PNG', quality=95)
                             img_buffer.seek(0)
-                            filename = f"hair_{length}_{angle}deg.png"
+                            filename = f"hair_{item}_{angle}deg.png"
                             zip_file.writestr(filename, img_buffer.getvalue())
 
                 zip_buffer.seek(0)
@@ -2294,11 +2430,12 @@ with tab5:
                     type="primary"
                 )
 
-        # 에러 상세 표시
+        # 에러 상세
         if errors:
             with st.expander(f"❌ 에러 상세 정보 ({len(errors)}건)"):
-                for (length, angle), error_msg in errors.items():
-                    st.error(f"**{LENGTH_CATEGORIES[length]['name']} + {angle}°**: {error_msg}")
+                for (item, angle), error_msg in errors.items():
+                    item_name = item_cats.get(item, {}).get('name', item)
+                    st.error(f"**{item_name} + {angle}°**: {error_msg}")
 
 with tab4:
     st.header("📝 처리 기록")
