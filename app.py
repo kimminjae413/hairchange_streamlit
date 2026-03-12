@@ -440,13 +440,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# 최근 내역 제한
+MAX_SEED_IMAGES = 10
+MAX_PROCESSING_HISTORY = 10
+
 # 세션 상태 초기화
 if 'user_id' not in st.session_state:
     st.session_state.user_id = str(uuid.uuid4())[:8]
-    
+
 if 'seed_images' not in st.session_state:
     st.session_state.seed_images = {}
-    
+
 if 'processing_history' not in st.session_state:
     st.session_state.processing_history = []
 
@@ -1854,7 +1858,11 @@ with tab2:
                     'processed_size': processed_image.size,
                     'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
-                
+                # 최근 10개 제한 — 오래된 것부터 삭제
+                while len(st.session_state.seed_images) > MAX_SEED_IMAGES:
+                    oldest_key = next(iter(st.session_state.seed_images))
+                    del st.session_state.seed_images[oldest_key]
+
                 st.markdown(f"""
                 <div class="success-box">
                     ✅ 시드 저장 완료!<br>
@@ -2019,7 +2027,10 @@ with tab1:
                                 'gender': gender
                             }
                             st.session_state.processing_history.append(history_item)
-                            
+                            # 최근 10개 제한 — 오래된 것부터 삭제
+                            while len(st.session_state.processing_history) > MAX_PROCESSING_HISTORY:
+                                st.session_state.processing_history.pop(0)
+
                             st.divider()
                             st.markdown("### 🎉 최종 결과")
                             
