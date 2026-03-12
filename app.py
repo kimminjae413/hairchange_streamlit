@@ -2617,11 +2617,20 @@ with tab5:
                 total_variations = len(selected_items) * len(selected_angles) * n_bangs * n_curls
 
                 if total_variations > 0:
-                    st.info(f"""
-                    📊 **예상 결과**: {len(selected_items)}개 길이 × {len(selected_angles)}개 각도 × {n_bangs}개 앞머리 × {n_curls}개 컬 = **{total_variations}장**
-                    ⏱️ **예상 시간**: 약 {total_variations * 8}~{total_variations * 15}초 (~{total_variations * 12 // 60}분)
-                    💰 **API 사용**: Gemini API {total_variations}회 호출
-                    """)
+                    st.markdown(f"""
+<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem; border-radius: 12px; margin: 1rem 0;">
+    <div style="font-size: 2.5rem; font-weight: 800; text-align: center; margin-bottom: 0.5rem;">
+        📊 총 {total_variations}장 생성
+    </div>
+    <div style="text-align: center; font-size: 1rem; opacity: 0.9;">
+        {len(selected_items)}개 길이 × {len(selected_angles)}개 각도 × {n_bangs}개 앞머리 × {n_curls}개 컬
+    </div>
+    <div style="display: flex; justify-content: center; gap: 2rem; margin-top: 1rem; font-size: 0.95rem;">
+        <span>⏱️ ~{total_variations * 12 // 60}분</span>
+        <span>💰 API {total_variations}회</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
                     if total_variations > 50:
                         st.error(f"🚫 최대 50장까지만 생성 가능합니다. (현재 {total_variations}장) 옵션을 줄여주세요.")
                 else:
@@ -2641,13 +2650,24 @@ with tab5:
                     if n_style_swaps > 0:
                         parts.append(f"스타일 변환 {n_style_swaps}개 × {len(selected_angles)}각도 = {total_style_images}장")
                     parts.append(f"원본 × {len(selected_angles)}각도 = {len(selected_angles)}장")
+                    parts_html = "".join([f"<div>{p}</div>" for p in parts])
 
-                    st.info(f"""
-                    📊 **예상 결과**: **{total_variations}장**
-                    {chr(10).join(['  • ' + p for p in parts])}
-                    ⏱️ **예상 시간**: 약 {total_variations * 8}~{total_variations * 15}초
-                    💰 **API 사용**: Gemini API {total_variations}회 호출
-                    """)
+                    st.markdown(f"""
+<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem; border-radius: 12px; margin: 1rem 0;">
+    <div style="font-size: 2.5rem; font-weight: 800; text-align: center; margin-bottom: 0.5rem;">
+        📊 총 {total_variations}장 생성
+    </div>
+    <div style="text-align: center; font-size: 0.9rem; opacity: 0.9;">
+        {parts_html}
+    </div>
+    <div style="display: flex; justify-content: center; gap: 2rem; margin-top: 1rem; font-size: 0.95rem;">
+        <span>⏱️ ~{total_variations * 12 // 60}분</span>
+        <span>💰 API {total_variations}회</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+                    if total_variations > 50:
+                        st.error(f"🚫 최대 50장까지만 생성 가능합니다. (현재 {total_variations}장) 옵션을 줄여주세요.")
                 else:
                     st.warning("스타일/Bang과 각도를 선택하세요.")
 
