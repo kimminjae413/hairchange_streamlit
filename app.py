@@ -2536,8 +2536,8 @@ with tab5:
                         if st.button("❌ 전체 해제", key="mstyle_none", use_container_width=True):
                             st.session_state.mstyle_select_all = False
 
-                    swap_list = get_male_style_swap_options(selected_male_style)
-                    available_styles = [selected_male_style] + swap_list
+                    # 전체 7개 스타일 표시 (교차 변환 허용)
+                    available_styles = list(MALE_STYLE_CATEGORIES.keys())
                     selected_items = []
 
                     for style_key in available_styles:
