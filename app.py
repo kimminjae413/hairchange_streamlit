@@ -2365,6 +2365,7 @@ with tab5:
                 )
                 if batch_file:
                     batch_source_image = Image.open(batch_file)
+                    st.session_state.batch_source_filename = batch_file.name
                     st.image(batch_source_image, caption="업로드된 이미지", width=250)
 
             elif image_source == "저장된 시드에서 선택":
@@ -2375,6 +2376,7 @@ with tab5:
                     if selected_seed:
                         seed_id = seed_options[selected_seed]
                         batch_source_image = st.session_state.seed_images[seed_id]['image']
+                        st.session_state.batch_source_filename = st.session_state.seed_images[seed_id]['filename']
                         st.image(batch_source_image, caption="선택된 시드", width=250)
                 else:
                     st.warning("저장된 시드가 없습니다. '시드 관리' 탭에서 먼저 추가하세요.")
@@ -2387,6 +2389,7 @@ with tab5:
                     if selected_history:
                         idx = history_options[selected_history]
                         batch_source_image = st.session_state.processing_history[idx]['result_image']
+                        st.session_state.batch_source_filename = f"결과_{st.session_state.processing_history[idx]['id']}"
                         st.image(batch_source_image, caption="선택된 결과", width=250)
                 else:
                     st.warning("처리 기록이 없습니다. '헤어 변경' 탭에서 먼저 변환하세요.")
@@ -2735,6 +2738,27 @@ with tab5:
 
                 if success_count > 0:
                     st.success(f"✅ {success_count}장 생성 완료! (실패: {error_count}장)")
+
+                    # 일괄 생성 결과를 처리 기록에 저장
+                    batch_history_item = {
+                        'id': str(uuid.uuid4())[:8],
+                        'type': 'batch',
+                        'seed_filename': st.session_state.get('batch_source_filename', '시드 이미지'),
+                        'ref_filename': f"일괄 생성 ({success_count}장)",
+                        'result_image': list(results.values())[0] if results else None,
+                        'batch_results': dict(list(results.items())[:12]),  # 미리보기용 최대 12장
+                        'batch_total_count': success_count,
+                        'batch_error_count': error_count,
+                        'batch_gender': batch_gender,
+                        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'processing_time': processing_time,
+                        'quality_mode': 'batch',
+                        'gemini_enhanced': True,
+                        'gender': batch_gender
+                    }
+                    st.session_state.processing_history.append(batch_history_item)
+                    while len(st.session_state.processing_history) > MAX_PROCESSING_HISTORY:
+                        st.session_state.processing_history.pop(0)
                 else:
                     st.error(f"❌ 모든 변환 실패 ({error_count}장)")
 
@@ -2889,41 +2913,80 @@ with tab4:
         )
         
         for item in history:
-            quality_emoji = "🎨" if item.get('quality_mode') == 'high' else "⚡"
-            quality_text = "고품질" if item.get('quality_mode') == 'high' else "표준"
-            gemini_emoji = "🤖" if item.get('gemini_enhanced') else ""
-            gemini_text = "+Gemini" if item.get('gemini_enhanced') else ""
+            is_batch = item.get('type') == 'batch'
 
-            with st.expander(f"{quality_emoji}{gemini_emoji} {item['created_at']} - {item['seed_filename']} → {item['ref_filename']} ({quality_text}{gemini_text})"):
-                col1, col2 = st.columns([1, 1])
+            if is_batch:
+                gender_text = "남성" if item.get('batch_gender') == 'male' else "여성"
+                total = item.get('batch_total_count', 0)
+                errors = item.get('batch_error_count', 0)
+                label = f"🔄 {item['created_at']} - 일괄 생성 ({gender_text}, {total}장) - {item['seed_filename']}"
+            else:
+                quality_emoji = "🎨" if item.get('quality_mode') == 'high' else "⚡"
+                quality_text = "고품질" if item.get('quality_mode') == 'high' else "표준"
+                gemini_emoji = "🤖" if item.get('gemini_enhanced') else ""
+                gemini_text = "+Gemini" if item.get('gemini_enhanced') else ""
+                label = f"{quality_emoji}{gemini_emoji} {item['created_at']} - {item['seed_filename']} → {item['ref_filename']} ({quality_text}{gemini_text})"
 
-                with col1:
+            with st.expander(label):
+                if is_batch:
+                    # 일괄 생성 기록 표시
                     st.write(f"**처리 ID**: {item['id']}")
-                    st.write(f"**시드 파일**: {item['seed_filename']}")
-                    st.write(f"**참조 파일**: {item['ref_filename']}")
-                    st.write(f"**품질 모드**: {quality_text}")
-                    st.write(f"**Gemini 후처리**: {'✅ 적용' if item.get('gemini_enhanced') else '❌ 미적용'}")
-                    if item.get('gender'):
-                        gender_text = "남성" if item.get('gender') == 'male' else "여성"
-                        st.write(f"**성별**: {gender_text}")
+                    st.write(f"**소스**: {item['seed_filename']}")
+                    st.write(f"**성별**: {gender_text}")
+                    st.write(f"**생성 수량**: {total}장 (실패: {errors}장)")
                     st.write(f"**처리 시간**: {item['processing_time']:.1f}초")
-                
-                with col2:
-                    st.image(item['result_image'], caption="처리 결과", width=300)
-                    
-                    timestamp = item['created_at'].replace('-', '').replace(':', '').replace(' ', '_')
-                    quality_suffix = "HQ" if item.get('quality_mode') == 'high' else "STD"
-                    filename = f"result_{item['id']}_{quality_suffix}_{timestamp}.png"
-                    download_data = create_download_link(item['result_image'], filename)
-                    
-                    st.download_button(
-                        "💾 고품질 다운로드",
-                        download_data,
-                        filename,
-                        "image/png",
-                        key=f"download_{item['id']}",
-                        help="최고 품질 PNG 다운로드"
-                    )
+
+                    batch_imgs = item.get('batch_results', {})
+                    if batch_imgs:
+                        st.markdown("**미리보기:**")
+                        img_list = list(batch_imgs.items())
+                        cols_per_row = 4
+                        for row_start in range(0, len(img_list), cols_per_row):
+                            row_items = img_list[row_start:row_start + cols_per_row]
+                            cols = st.columns(cols_per_row)
+                            for ci, (key, img) in enumerate(row_items):
+                                if img:
+                                    if isinstance(key, tuple) and len(key) == 4:
+                                        cap = f"{key[0]} {key[1]}° {key[2]} {key[3]}"
+                                    elif isinstance(key, tuple):
+                                        cap = f"{key[0]} {key[1]}°"
+                                    else:
+                                        cap = str(key)
+                                    cols[ci].image(img, caption=cap, use_container_width=True)
+                        if total > len(batch_imgs):
+                            st.caption(f"... 외 {total - len(batch_imgs)}장 더 있음 (일괄 생성 탭에서 확인)")
+                else:
+                    # 단일 변환 기록 표시
+                    col1, col2 = st.columns([1, 1])
+
+                    with col1:
+                        st.write(f"**처리 ID**: {item['id']}")
+                        st.write(f"**시드 파일**: {item['seed_filename']}")
+                        st.write(f"**참조 파일**: {item['ref_filename']}")
+                        quality_text = "고품질" if item.get('quality_mode') == 'high' else "표준"
+                        st.write(f"**품질 모드**: {quality_text}")
+                        st.write(f"**Gemini 후처리**: {'✅ 적용' if item.get('gemini_enhanced') else '❌ 미적용'}")
+                        if item.get('gender'):
+                            g_text = "남성" if item.get('gender') == 'male' else "여성"
+                            st.write(f"**성별**: {g_text}")
+                        st.write(f"**처리 시간**: {item['processing_time']:.1f}초")
+
+                    with col2:
+                        st.image(item['result_image'], caption="처리 결과", width=300)
+
+                        timestamp = item['created_at'].replace('-', '').replace(':', '').replace(' ', '_')
+                        quality_suffix = "HQ" if item.get('quality_mode') == 'high' else "STD"
+                        filename = f"result_{item['id']}_{quality_suffix}_{timestamp}.png"
+                        download_data = create_download_link(item['result_image'], filename)
+
+                        st.download_button(
+                            "💾 고품질 다운로드",
+                            download_data,
+                            filename,
+                            "image/png",
+                            key=f"download_{item['id']}",
+                            help="최고 품질 PNG 다운로드"
+                        )
 
 # 푸터
 st.divider()
