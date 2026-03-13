@@ -705,6 +705,11 @@ ANGLE_OPTIONS = {
 }
 
 
+def _angle_key(angle):
+    """각도를 ANGLE_OPTIONS 키 형식 문자열로 변환 (모듈 레벨 유틸리티)"""
+    return str(angle) if angle != int(angle) else str(int(angle))
+
+
 def generate_length_variation(image, source_length, target_length, gender="female",
                               bang=None, curl=None, male_style=None, target_male_style=None):
     """
@@ -1174,9 +1179,6 @@ def generate_batch_variations(image, source_length, target_items, target_angles,
     is_male = gender == 'male'
     label = "스타일" if is_male else "길이"
 
-    def _angle_key(angle):
-        return str(angle) if angle in [22.5, 67.5, -22.5, -67.5] else str(int(angle))
-
     def _angle_name(angle):
         return ANGLE_OPTIONS.get(_angle_key(angle), {}).get('name', f'{angle}°')
 
@@ -1203,7 +1205,7 @@ def generate_batch_variations(image, source_length, target_items, target_angles,
 
                     if item_error and item != source_length:
                         for angle in target_angles:
-                            errors[(item, str(angle), b, c)] = item_error
+                            errors[(item, _angle_key(angle), b, c)] = item_error
                             current_task += 1
                         continue
 
@@ -1217,15 +1219,16 @@ def generate_batch_variations(image, source_length, target_items, target_angles,
                         angle_image, angle_error = generate_angle_variation(base_image, angle, gender)
 
                         if angle_error:
-                            errors[(item, str(angle), b, c)] = angle_error
+                            errors[(item, _angle_key(angle), b, c)] = angle_error
                         else:
-                            results[(item, str(angle), b, c)] = angle_image
+                            results[(item, _angle_key(angle), b, c)] = angle_image
 
                         time.sleep(0.5)
 
     # Male: bang swap + style swap
     elif gender == 'male' and target_bangs:
-        total_tasks = (len(target_bangs) + len(target_items)) * len(target_angles)
+        effective_style_count = len([i for i in target_items if i != male_style])
+        total_tasks = (len(target_bangs) + effective_style_count) * len(target_angles)
         current_task = 0
 
         # Phase 1: Bang swaps (same style, different bangs)
@@ -1241,7 +1244,7 @@ def generate_batch_variations(image, source_length, target_items, target_angles,
 
             if bang_error:
                 for angle in target_angles:
-                    errors[(f"{male_style}_{target_bang}", str(angle))] = bang_error
+                    errors[(f"{male_style}_{target_bang}", _angle_key(angle))] = bang_error
                     current_task += 1
                 continue
 
@@ -1255,9 +1258,9 @@ def generate_batch_variations(image, source_length, target_items, target_angles,
                 angle_image, angle_error = generate_angle_variation(base_image, angle, gender)
 
                 if angle_error:
-                    errors[(f"{male_style}_{target_bang}", str(angle))] = angle_error
+                    errors[(f"{male_style}_{target_bang}", _angle_key(angle))] = angle_error
                 else:
-                    results[(f"{male_style}_{target_bang}", str(angle))] = angle_image
+                    results[(f"{male_style}_{target_bang}", _angle_key(angle))] = angle_image
 
                 time.sleep(0.5)
 
@@ -1277,7 +1280,7 @@ def generate_batch_variations(image, source_length, target_items, target_angles,
 
             if item_error:
                 for angle in target_angles:
-                    errors[(item, str(angle))] = item_error
+                    errors[(item, _angle_key(angle))] = item_error
                     current_task += 1
                 continue
 
@@ -1291,9 +1294,9 @@ def generate_batch_variations(image, source_length, target_items, target_angles,
                 angle_image, angle_error = generate_angle_variation(base_image, angle, gender)
 
                 if angle_error:
-                    errors[(item, str(angle))] = angle_error
+                    errors[(item, _angle_key(angle))] = angle_error
                 else:
-                    results[(item, str(angle))] = angle_image
+                    results[(item, _angle_key(angle))] = angle_image
 
                 time.sleep(0.5)
 
@@ -1315,7 +1318,7 @@ def generate_batch_variations(image, source_length, target_items, target_angles,
 
             if item_error and item != source_length:
                 for angle in target_angles:
-                    errors[(item, str(angle))] = item_error
+                    errors[(item, _angle_key(angle))] = item_error
                     current_task += 1
                 continue
 
@@ -1329,9 +1332,9 @@ def generate_batch_variations(image, source_length, target_items, target_angles,
                 angle_image, angle_error = generate_angle_variation(base_image, angle, gender)
 
                 if angle_error:
-                    errors[(item, str(angle))] = angle_error
+                    errors[(item, _angle_key(angle))] = angle_error
                 else:
-                    results[(item, str(angle))] = angle_image
+                    results[(item, _angle_key(angle))] = angle_image
 
                 time.sleep(0.5)
 
@@ -2615,8 +2618,8 @@ with tab5:
 
             # Calculate total variations
             if batch_gender == 'female':
-                n_bangs = len(selected_bangs) if 'selected_bangs' in dir() else 1
-                n_curls = len(selected_curls) if 'selected_curls' in dir() else 1
+                n_bangs = len(selected_bangs) if 'selected_bangs' in locals() else 1
+                n_curls = len(selected_curls) if 'selected_curls' in locals() else 1
                 total_variations = len(selected_items) * len(selected_angles) * n_bangs * n_curls
 
                 if total_variations > 0:
@@ -2640,11 +2643,11 @@ with tab5:
                     st.warning("길이와 각도를 각각 1개 이상 선택하세요.")
 
             elif batch_gender == 'male':
-                n_target_bangs = len(selected_target_bangs) if 'selected_target_bangs' in dir() else 0
+                n_target_bangs = len(selected_target_bangs) if 'selected_target_bangs' in locals() else 0
                 n_style_swaps = len([s for s in selected_items if s != selected_male_style])
                 total_bang_images = n_target_bangs * len(selected_angles)
                 total_style_images = n_style_swaps * len(selected_angles)
-                total_variations = total_bang_images + total_style_images + len(selected_angles)  # +source
+                total_variations = total_bang_images + total_style_images
 
                 if total_variations > 0:
                     parts = []
@@ -2652,7 +2655,6 @@ with tab5:
                         parts.append(f"Bang 스왑 {n_target_bangs}개 × {len(selected_angles)}각도 = {total_bang_images}장")
                     if n_style_swaps > 0:
                         parts.append(f"스타일 변환 {n_style_swaps}개 × {len(selected_angles)}각도 = {total_style_images}장")
-                    parts.append(f"원본 × {len(selected_angles)}각도 = {len(selected_angles)}장")
                     parts_html = "".join([f"<div>{p}</div>" for p in parts])
 
                     st.markdown(f"""
@@ -2702,8 +2704,8 @@ with tab5:
                             update_progress,
                             bang=selected_bang,
                             curl=selected_curl,
-                            bangs=selected_bangs if len(selected_bangs) > 1 else None,
-                            curls=selected_curls if len(selected_curls) > 1 else None,
+                            bangs=selected_bangs,
+                            curls=selected_curls,
                             male_style=None,
                             target_male_style=None,
                             item_categories=item_cats
@@ -2778,9 +2780,6 @@ with tab5:
 
         st.markdown("**📊 변환 결과 그리드**")
 
-        def _angle_key_display(angle):
-            return str(angle) if angle in [22.5, 67.5, -22.5, -67.5] else str(int(angle))
-
         # Detect key format
         sample_key = next(iter(results.keys())) if results else None
         is_4tuple = sample_key and len(sample_key) == 4  # (item, angle, bang, curl)
@@ -2805,7 +2804,7 @@ with tab5:
                     header_cols = st.columns([1] + [1] * len(angles_in))
                     header_cols[0].markdown("**길이 \\ 각도**")
                     for i, angle in enumerate(angles_in):
-                        akey = _angle_key_display(angle)
+                        akey = _angle_key(angle)
                         aname = ANGLE_OPTIONS.get(akey, {}).get('name', f'{angle}°')
                         header_cols[i + 1].markdown(f"**{aname}**")
 
@@ -2815,7 +2814,7 @@ with tab5:
                         row_cols[0].markdown(f"**{item}: {item_name}**")
 
                         for i, angle in enumerate(angles_in):
-                            akey = _angle_key_display(angle)
+                            akey = _angle_key(angle)
                             key = (item, akey)
                             if key in filtered and filtered[key]:
                                 row_cols[i + 1].image(filtered[key], use_container_width=True)
@@ -2832,7 +2831,7 @@ with tab5:
             row_label = "스타일" if batch_gender_val == 'male' else "길이"
             header_cols[0].markdown(f"**{row_label} \\ 각도**")
             for i, angle in enumerate(angles_in_results):
-                angle_key = _angle_key_display(angle)
+                angle_key = _angle_key(angle)
                 angle_name = ANGLE_OPTIONS.get(angle_key, {}).get('name', f'{angle}°')
                 header_cols[i + 1].markdown(f"**{angle_name}**")
 
@@ -2842,7 +2841,7 @@ with tab5:
                 row_cols[0].markdown(f"**{item}: {item_name}**")
 
                 for i, angle in enumerate(angles_in_results):
-                    angle_key = _angle_key_display(angle)
+                    angle_key = _angle_key(angle)
                     key = (item, angle_key)
 
                     if key in results and results[key]:
