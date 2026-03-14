@@ -41,6 +41,7 @@ ENV/
 *.gif
 *.bmp
 *.tiff
+!assets/angle_references/*.png
 images/
 uploads/
 temp/
