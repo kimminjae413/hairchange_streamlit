@@ -958,9 +958,27 @@ OUTPUT: Single high-quality image showing the transformation."""
             return None, f"길이 변환 실패: {error_msg}"
 
 
+    # 각도별 참조 이미지 파일 매핑
+ANGLE_REFERENCE_FILES = {
+    -90: "right_90.png", -67.5: "right_67.png", -45: "right_45.png", -22.5: "right_22.png",
+    22.5: "left_22.png", 45: "left_45.png", 67.5: "left_67.png", 90: "left_90.png",
+}
+
+def _load_angle_reference(target_angle):
+    """각도에 맞는 참조 이미지 로드"""
+    ref_file = ANGLE_REFERENCE_FILES.get(target_angle)
+    if not ref_file:
+        return None
+    ref_path = os.path.join(os.path.dirname(__file__), "assets", "angle_references", ref_file)
+    try:
+        return Image.open(ref_path).copy()
+    except Exception:
+        return None
+
+
 def generate_angle_variation(image, target_angle, gender="female"):
     """
-    Gemini로 헤어 각도 변환 이미지 생성 (세밀한 각도 지원, 좌/우 방향)
+    Gemini로 헤어 각도 변환 이미지 생성 (참조 이미지 활용, 좌/우 방향)
 
     Args:
         image: PIL Image 객체 (원본 이미지, 정면으로 가정)
@@ -985,65 +1003,66 @@ def generate_angle_variation(image, target_angle, gender="female"):
     angle_key = str(target_angle)
     angle_info = ANGLE_OPTIONS.get(angle_key, {})
     if not angle_info:
-        # fallback for legacy keys
         fallback_key = str(abs_angle) if abs_angle in [22.5, 67.5] else str(int(abs_angle))
         angle_info = ANGLE_OPTIONS.get(fallback_key, ANGLE_OPTIONS.get('45', {}))
+
+    # 참조 이미지 로드
+    ref_image = _load_angle_reference(target_angle)
 
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
 
-        # 방향별 시각적 단서 생성
-        if direction == "RIGHT":
-            # 우측 회전 = 카메라가 인물의 오른쪽으로 이동 = 인물의 왼쪽 얼굴이 더 보임
-            ear_visible = "LEFT ear becomes more visible"
-            nose_direction = "nose points toward the RIGHT side of the image"
-            face_turn = "the person's face is turned to their RIGHT (viewer's left)"
-            cheek_visible = "LEFT cheek is more visible, RIGHT cheek is hidden"
-            mirror_note = "This is the MIRROR OPPOSITE of a left turn. If left turn shows the right ear, this must show the LEFT ear."
-        else:
-            # 좌측 회전 = 카메라가 인물의 왼쪽으로 이동 = 인물의 오른쪽 얼굴이 더 보임
-            ear_visible = "RIGHT ear becomes more visible"
-            nose_direction = "nose points toward the LEFT side of the image"
-            face_turn = "the person's face is turned to their LEFT (viewer's right)"
-            cheek_visible = "RIGHT cheek is more visible, LEFT cheek is hidden"
-            mirror_note = "This is the MIRROR OPPOSITE of a right turn. If right turn shows the left ear, this must show the RIGHT ear."
+        # 참조 이미지 유무에 따라 프롬프트 분기
+        if ref_image:
+            prompt = f"""[CAMERA ANGLE ROTATION TASK]
 
-        prompt = f"""[CAMERA ANGLE ROTATION TASK - {direction} {abs_angle}°]
+You are given THREE inputs:
+1. This text prompt
+2. IMAGE 1 (SOURCE): A person's photo from the FRONT VIEW
+3. IMAGE 2 (ANGLE REFERENCE): A line drawing showing the EXACT target head angle/pose
+
+YOUR TASK: Transform the SOURCE person to match the EXACT SAME angle/pose as the ANGLE REFERENCE drawing.
+
+🔴 DIRECTION: {direction} {abs_angle}° ({direction_kr} {abs_angle}도)
+- The face must be turned to the **{direction}**
+- Match the head rotation in the reference drawing EXACTLY
+
+⚠️ RULES:
+1. FACE: Keep the EXACT same person's face from the source. Same identity, features, skin tone.
+2. HAIR: Keep the EXACT same hairstyle. Same cut, length, color, texture.
+3. CLOTHES: Keep the EXACT same clothing.
+4. ANGLE: Match the angle reference drawing precisely. The head direction in your output must match the reference.
+5. BACKGROUND: Clean, neutral studio background.
+6. OUTPUT: Generate ONLY ONE person. Do NOT create multiple people or split images.
+
+The reference drawing shows a head turned to the {direction}. Your output must show the source person turned in the SAME direction."""
+        else:
+            prompt = f"""[CAMERA ANGLE ROTATION TASK - {direction} {abs_angle}°]
 
 The source image shows a person from the FRONT VIEW (0°).
 Rotate the camera {abs_angle}° to the {direction}.
 
-🔴 CRITICAL DIRECTION INSTRUCTION:
-- Direction: **{direction}** (카메라가 인물의 {direction_kr}으로 이동)
-- {face_turn}
-- {nose_direction}
-- {ear_visible}
-- {cheek_visible}
-- {mirror_note}
+🔴 DIRECTION: {direction} ({direction_kr})
+- The face must turn to the {direction}
+- Nose points toward the {direction} side of the image
 
-⚠️ ABSOLUTE RULES - DO NOT VIOLATE:
-1. FACE: Keep the EXACT same face. Same eyes, nose, lips, skin tone, facial structure. NO changes.
-2. HAIR: Keep the EXACT same hairstyle. Same cut, length, color, texture, styling, volume. NO changes.
-3. CLOTHES: Keep the EXACT same clothing. Same color, pattern, style. NO changes.
-4. BACKGROUND: Keep a clean, neutral studio background.
-5. LIGHTING: Keep consistent professional studio lighting.
-6. DIRECTION: The face MUST turn to the {direction}. Do NOT generate the opposite direction.
+⚠️ RULES:
+1. FACE: Keep the EXACT same face. Same identity, features, skin tone.
+2. HAIR: Keep the EXACT same hairstyle. Same cut, length, color, texture.
+3. CLOTHES: Keep the EXACT same clothing.
+4. BACKGROUND: Clean, neutral studio background.
+5. OUTPUT: Generate ONLY ONE person. Do NOT create multiple people.
 
-📐 CAMERA ROTATION DETAILS:
-- Camera moves to the {direction} of the person by {abs_angle}°
-- View name: {angle_info.get('name', f'{direction_kr} {abs_angle}°')}
+OUTPUT: Single image of the person from {abs_angle}° {direction} view."""
 
-🎯 VISUAL CHECKLIST for {direction} {abs_angle}°:
-{"- 22.5° " + direction + ": Very slight turn. " + cheek_visible + ". Both eyes still fully visible. " + nose_direction + " slightly." if abs_angle == 22.5 else ""}
-{"- 45° " + direction + ": Clear quarter turn. " + ear_visible + ". " + nose_direction + ". One eye partially obscured by the nose bridge." if abs_angle == 45 else ""}
-{"- 67.5° " + direction + ": Strong three-quarter turn. " + ear_visible + " clearly. " + nose_direction + ". Far eye mostly hidden." if abs_angle == 67.5 else ""}
-{"- 90° " + direction + ": Full profile/side view. " + ear_visible + " fully. Only one eye visible. " + nose_direction + " completely." if abs_angle == 90 else ""}
-
-OUTPUT: Single high-quality image showing the person from {abs_angle}° {direction} view. The face MUST be turned to the {direction}."""
+        # contents 구성: 프롬프트 + 원본 + (참조 이미지)
+        contents = [prompt, image]
+        if ref_image:
+            contents.append(ref_image)
 
         response = client.models.generate_content(
             model="gemini-3-pro-image-preview",
-            contents=[prompt, image],
+            contents=contents,
             config=types.GenerateContentConfig(
                 response_modalities=['IMAGE', 'TEXT']
             )
