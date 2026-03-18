@@ -4,3 +4,4 @@ Pillow>=10.0.0
 google-genai>=1.0.0
 pytrends>=4.9.0
 duckduckgo_search>=4.0.0
+google-search-results>=2.4.0

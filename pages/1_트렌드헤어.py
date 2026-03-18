@@ -51,6 +51,7 @@ def _get_key(name: str):
 
 GOOGLE_API_KEY = _get_key("GOOGLE_API_KEY")
 GOOGLE_CX = _get_key("GOOGLE_CX")
+SERPAPI_KEY = _get_key("SERPAPI_KEY")
 GEMINI_API_KEY = _get_key("GEMINI_API_KEY")
 
 # ---------------------------------------------------------------------------
@@ -292,9 +293,43 @@ def search_images_ddg(query, num=10):
         return []
 
 
+def search_images_serpapi(query, num=10):
+    """SerpAPI Google Image Search (월 100회 무료)."""
+    if not SERPAPI_KEY:
+        return []
+    try:
+        from serpapi import GoogleSearch
+        params = {
+            "q": query,
+            "tbm": "isch",
+            "hl": "ko",
+            "gl": "kr",
+            "num": num,
+            "api_key": SERPAPI_KEY,
+        }
+        search = GoogleSearch(params)
+        data = search.get_dict()
+        images = data.get("images_results", [])
+        return [
+            {
+                "url": img.get("original", ""),
+                "title": img.get("title", ""),
+                "source": img.get("source", ""),
+                "snippet": img.get("title", ""),
+                "thumbnail": img.get("thumbnail", ""),
+            }
+            for img in images
+            if img.get("original")
+        ]
+    except Exception:
+        return []
+
+
 def search_images(query, num=10):
-    """Try Google Custom Search first, then DDG fallback."""
-    results = search_images_google(query, num)
+    """Try SerpAPI first, then Google Custom Search, then DDG fallback."""
+    results = search_images_serpapi(query, num)
+    if not results:
+        results = search_images_google(query, num)
     if not results:
         results = search_images_ddg(query, num)
     return results
@@ -579,7 +614,21 @@ with st.sidebar:
     # API status
     st.divider()
     st.caption("**API 상태**")
-    st.caption(f"Google Search: {'✅' if GOOGLE_API_KEY and GOOGLE_CX else '❌ (DDG 대체)'}")
+    if SERPAPI_KEY:
+        st.caption("SerpAPI: ✅")
+        # SerpAPI 잔여 횟수 표시
+        try:
+            resp = requests.get(f"https://serpapi.com/account.json?api_key={SERPAPI_KEY}", timeout=5)
+            if resp.status_code == 200:
+                account = resp.json()
+                remaining = account.get("total_searches_left", "?")
+                st.caption(f"잔여 검색: {remaining}회")
+        except Exception:
+            pass
+    elif GOOGLE_API_KEY and GOOGLE_CX:
+        st.caption("Google Search: ✅")
+    else:
+        st.caption("검색: DDG 대체 (API 키 없음)")
     st.caption(f"Gemini Vision: {'✅' if GEMINI_API_KEY else '❌ (분석 없음)'}")
 
     # Favorites section
