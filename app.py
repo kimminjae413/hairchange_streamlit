@@ -2178,13 +2178,25 @@ with tab1:
         
         with col2:
             st.subheader("2️⃣ 헤어 참조 이미지")
-            
+
+            # 트렌드 갤러리에서 선택한 참조 이미지가 있는 경우
+            trend_ref = st.session_state.get("selected_reference")
+            if trend_ref and trend_ref.get("image_bytes"):
+                st.success(f"🔥 트렌드 갤러리에서 선택: {trend_ref.get('style_name', '')}")
+                trend_ref_pil = Image.open(io.BytesIO(trend_ref["image_bytes"]))
+                if trend_ref_pil.mode != "RGB":
+                    trend_ref_pil = trend_ref_pil.convert("RGB")
+                st.image(trend_ref_pil, caption="트렌드 참조 이미지", width=250)
+                if st.button("❌ 트렌드 참조 해제"):
+                    st.session_state.selected_reference = None
+                    st.rerun()
+
             ref_file = st.file_uploader(
-                "원하는 헤어스타일 이미지", 
+                "직접 업로드 (트렌드 참조가 없을 때)" if trend_ref else "원하는 헤어스타일 이미지",
                 type=['png', 'jpg', 'jpeg'],
                 help="원하는 헤어스타일이 담긴 사진"
             )
-            
+
             if ref_file:
                 ref_image = Image.open(ref_file)
                 st.image(ref_image, caption="참조 이미지", width=250)
@@ -2241,15 +2253,22 @@ with tab1:
             elif not GEMINI_API_KEY:
                 st.warning("⚠️ Gemini API 키가 설정되지 않았습니다. Secrets에 GEMINI_API_KEY를 추가하세요.")
         
-        if ref_file:
+        has_ref = ref_file or (trend_ref and trend_ref.get("image_bytes"))
+        if has_ref:
             st.divider()
-            
+
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 if st.button("🚀 AI 헤어 변경 시작", type="primary", use_container_width=True):
-                    
-                    ref_image = Image.open(ref_file)
-                    
+
+                    # 트렌드 참조 이미지 우선, 없으면 업로드 파일 사용
+                    if trend_ref and trend_ref.get("image_bytes") and not ref_file:
+                        ref_image = Image.open(io.BytesIO(trend_ref["image_bytes"]))
+                        if ref_image.mode != "RGB":
+                            ref_image = ref_image.convert("RGB")
+                    else:
+                        ref_image = Image.open(ref_file)
+
                     is_valid, message, processed_ref_image = validate_image(ref_image)
                     if not is_valid:
                         st.error(f"참조 이미지 오류: {message}")
