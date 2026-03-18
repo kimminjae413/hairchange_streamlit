@@ -395,6 +395,7 @@ def analyze_images_with_gemini(images):
       "index": 0,
       "style_name": "스타일 한국어 이름 (예: 레이어드 보브컷)",
       "trend_score": 8,
+      "is_clean_photo": true,
       "description": "한 줄 설명",
       "suitable_age": "적합 연령대",
       "keywords": ["키워드1", "키워드2"]
@@ -404,6 +405,13 @@ def analyze_images_with_gemini(images):
 
 - index는 이미지 번호 [이미지 0], [이미지 1] ... 순서대로
 - trend_score는 1-10 (현재 2025 트렌드 반영도)
+- is_clean_photo: 아래 경우 false로 설정:
+  * 이미지에 텍스트/글자/자막이 있는 경우 (블로그 썸네일, 유튜브 캡처 등)
+  * 여러 사진이 콜라주/합성된 경우
+  * 워터마크가 크게 있는 경우
+  * 헤어스타일이 아닌 이미지
+  * 해상도가 낮거나 흐린 이미지
+  순수한 헤어스타일 사진만 true로 설정해주세요
 - 헤어스타일이 아닌 이미지는 trend_score를 1로 주세요
 """
         parts.append(types.Part.from_text(text=prompt))
@@ -433,6 +441,7 @@ def analyze_images_with_gemini(images):
                     a = analysis_by_idx[j]
                     img["style_name"] = a.get("style_name", img.get("title", ""))[:40]
                     img["trend_score"] = max(1, min(10, a.get("trend_score", 5)))
+                    img["is_clean_photo"] = a.get("is_clean_photo", True)
                     img["description"] = a.get("description", "")
                     img["suitable_age"] = a.get("suitable_age", "")
                     img["keywords"] = a.get("keywords", [])
@@ -522,6 +531,13 @@ def run_search(category, num_images, custom_query=""):
 
     # Step 3: Gemini analysis
     analyzed = analyze_images_with_gemini(unique_images)
+
+    # Filter out thumbnails/collages (is_clean_photo == False)
+    clean_count = len(analyzed)
+    analyzed = [img for img in analyzed if img.get("is_clean_photo", True)]
+    filtered_count = clean_count - len(analyzed)
+    if filtered_count > 0:
+        st.info(f"썸네일/콜라주 {filtered_count}개 자동 제외됨")
 
     # Sort by trend score descending
     analyzed.sort(key=lambda x: x.get("trend_score", 0), reverse=True)
