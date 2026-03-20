@@ -823,12 +823,3 @@ elif st.session_state.trend_results:
 else:
     st.info("👈 왼쪽 사이드바에서 카테고리를 선택하고 🔍 검색 버튼을 눌러주세요.")
 
-    # Quick start buttons
-    st.markdown("### 빠른 검색")
-    quick_cols = st.columns(4)
-    quick_cats = ["20대 여성", "30대 여성", "20대 남성", "40대 여성"]
-    for i, qc in enumerate(quick_cats):
-        with quick_cols[i]:
-            if st.button(f"💇 {qc}", key=f"quick_{i}", use_container_width=True):
-                run_search(qc, 20)
-                st.rerun()
